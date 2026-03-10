@@ -1,0 +1,91 @@
+{
+    "name": "dsaflow",
+    "displayName": "DSAFlow",
+    "description": "The ultimate companion for competitive programmers to track, analyze, and master Data Structures & Algorithms with intelligent insights and spaced repetition.",
+    "version": "1.0.0",
+    "publisher": "dsaflow",
+    "icon": "dsaflow-icon.png",
+    "engines": {
+        "vscode": "^1.80.0"
+    },
+    "categories": [
+        "Education",
+        "Data Science",
+        "Other"
+    ],
+    "keywords": [
+        "DSA",
+        "LeetCode",
+        "Competitve Programming",
+        "Algorithms",
+        "Data Structures",
+        "Interview Prep",
+        "AI"
+    ],
+    "activationEvents": [
+        "onStartupFinished"
+    ],
+    "main": "./out/extension.js",
+    "contributes": {
+        "commands": [
+            {
+                "command": "dsaflow.startTracking",
+                "title": "DSAFlow: Start Tracking"
+            },
+            {
+                "command": "dsaflow.stopTracking",
+                "title": "DSAFlow: Stop Tracking"
+            },
+            {
+                "command": "dsaflow.openDashboard",
+                "title": "DSAFlow: Open Dashboard"
+            },
+            {
+                "command": "dsaflow.addNote",
+                "title": "DSAFlow: Add Note to Last Problem"
+            },
+            {
+                "command": "dsaflow.login",
+                "title": "DSAFlow: Login (Store Token Securely)"
+            },
+            {
+                "command": "dsaflow.viewStats",
+                "title": "DSAFlow: View Stats"
+            }
+        ],
+        "configuration": {
+            "title": "DSAFlow",
+            "properties": {
+                "dsaflow.apiUrl": {
+                    "type": "string",
+                    "default": "http://localhost:3001/api/problems",
+                    "description": "The URL of your DSAFlow backend API endpoint."
+                },
+                "dsaflow.dashboardUrl": {
+                    "type": "string",
+                    "default": "http://localhost:3000",
+                    "description": "URL of the DSAFlow dashboard (opened by Open Dashboard command)."
+                }
+            }
+        }
+    },
+    "scripts": {
+        "vscode:prepublish": "npm run compile",
+        "compile": "tsc -p ./",
+        "watch": "tsc -watch -p ./",
+        "pretest": "npm run compile && npm run lint",
+        "lint": "eslint src --ext ts"
+    },
+    "devDependencies": {
+        "@types/node": "18.x",
+        "@types/vscode": "^1.80.0",
+        "@typescript-eslint/eslint-plugin": "^6.x",
+        "@typescript-eslint/parser": "^6.x",
+        "@vscode/vsce": "^3.7.1",
+        "eslint": "^8.x",
+        "typescript": "^5.x"
+    },
+    "dependencies": {
+        "axios": "^1.6.0"
+    }
+}

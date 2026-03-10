@@ -1,0 +1,17 @@
+{
+  "name": "dsaflow",
+  "version": "1.0.0",
+  "description": "DSAFlow Monorepo",
+  "private": true,
+  "workspaces": [
+    "apps/*",
+    "packages/*"
+  ],
+  "scripts": {
+    "dev": "npm run dev --workspaces"
+  },
+  "main": "index.js",
+  "keywords": [],
+  "author": "",
+  "license": "ISC"
+}
