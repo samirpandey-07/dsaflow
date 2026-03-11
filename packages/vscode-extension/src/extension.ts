@@ -18,12 +18,16 @@ export function activate(context: vscode.ExtensionContext) {
     extensionContext = context;
     console.log('DSAFlow extension activated.');
 
-    // 1. Initialize Status Bar
+    // 1. Initialize Status Bar & Output Channel
+    const outputChannel = vscode.window.createOutputChannel('DSAFlow');
+    outputChannel.appendLine(`DSAFlow extension activated. Scheme: ${vscode.env.uriScheme}`);
+    outputChannel.appendLine(`Extension ID: ${context.extension.id}`);
+
     statusBarItem = vscode.window.createStatusBarItem(vscode.StatusBarAlignment.Left, 100);
     statusBarItem.command = 'dsaflow.openDashboard';
     updateStatusBar('Active');
     statusBarItem.show();
-    context.subscriptions.push(statusBarItem);
+    context.subscriptions.push(statusBarItem, outputChannel);
 
     // 2. Register Commands
     const startCmd = vscode.commands.registerCommand('dsaflow.startTracking', () => {
@@ -46,18 +50,57 @@ export function activate(context: vscode.ExtensionContext) {
         vscode.env.openExternal(vscode.Uri.parse(dashUrl));
     });
 
-    // 🔐 New secure login command
-    const loginCmd = vscode.commands.registerCommand('dsaflow.login', async () => {
-        const token = await vscode.window.showInputBox({
-            prompt: 'Enter your DSAFlow JWT or Supabase Anon Key',
-            placeHolder: 'eyJhbGci...',
-            password: true, // Masks input
-            ignoreFocusOut: true
-        });
-        if (token) {
-            await context.secrets.store(SECRET_KEY, token);
-            vscode.window.showInformationMessage('DSAFlow: Token saved securely! ✅');
+    // 🔗 OAuth Deep Linking Handler
+    const handleAuthUri = async (uri: vscode.Uri) => {
+        outputChannel.appendLine(`[URI Handler] Received URI: ${uri.toString()}`);
+        if (uri.path === '/auth') {
+            outputChannel.appendLine(`[URI Handler] Query: ${uri.query}`);
+            let token = null;
+            const queryParams = uri.query.split('&');
+            for (const param of queryParams) {
+                if (param.startsWith('token=')) {
+                    token = param.substring('token='.length);
+                    break;
+                }
+            }
+
+            outputChannel.appendLine(`[URI Handler] Extracted token length: ${token?.length}`);
+
+            if (token) {
+                await context.secrets.store(SECRET_KEY, token);
+                outputChannel.appendLine(`[URI Handler] Token stored successfully in SecretStorage.`);
+                vscode.window.showInformationMessage('DSAFlow: Successfully logged in! ✅');
+            } else {
+                outputChannel.appendLine(`[URI Handler] Failed to extract token.`);
+                vscode.window.showErrorMessage('DSAFlow: Login failed. No token received.');
+            }
         }
+    };
+
+    vscode.window.registerUriHandler({
+        handleUri: handleAuthUri
+    });
+
+    // 🔐 New automated login command
+    const loginCmd = vscode.commands.registerCommand('dsaflow.login', async () => {
+        const config = vscode.workspace.getConfiguration('dsaflow');
+        let dashUrl = config.get<string>('dashboardUrl') || 'http://localhost:3000';
+
+        // Anti-Rogue-Service-Worker hack: If localhost is used, swap to 127.0.0.1 to avoid Workbox cache crashes
+        dashUrl = dashUrl.replace('localhost', '127.0.0.1');
+
+        const loginUrl = `${dashUrl}/login?source=vscode&scheme=${vscode.env.uriScheme}&extId=${context.extension.id}`;
+        outputChannel.appendLine(`[Login Command] Opening browser at ${loginUrl}`);
+        vscode.window.showInformationMessage('DSAFlow: Opening browser for login...');
+        vscode.env.openExternal(vscode.Uri.parse(loginUrl));
+    });
+
+    // 🚪 Logout command (Clears Token & Queue)
+    const logoutCmd = vscode.commands.registerCommand('dsaflow.logout', async () => {
+        await context.secrets.delete(SECRET_KEY);
+        await context.globalState.update(PENDING_KEY, []); // Clear queue to avoid retrying with bad tokens
+        outputChannel.appendLine(`[Logout] Token and offline queue cleared.`);
+        vscode.window.showInformationMessage('DSAFlow: Logged out and queue cleared.');
     });
 
     const noteCmd = vscode.commands.registerCommand('dsaflow.addNote', async () => {
@@ -73,7 +116,7 @@ export function activate(context: vscode.ExtensionContext) {
         await showStatsWebview(context);
     });
 
-    context.subscriptions.push(startCmd, stopCmd, dashCmd, loginCmd, noteCmd, statsCmd);
+    context.subscriptions.push(startCmd, stopCmd, dashCmd, loginCmd, logoutCmd, noteCmd, statsCmd);
 
     // 🔁 Retry offline queue on activation
     retryPendingProblems(context);
@@ -113,6 +156,8 @@ async function retryPendingProblems(context: vscode.ExtensionContext) {
     }
 }
 
+let saveDebounceTimer: NodeJS.Timeout | undefined;
+
 function startWatcher(context: vscode.ExtensionContext) {
     if (fileWatcher) return;
 
@@ -123,14 +168,29 @@ function startWatcher(context: vscode.ExtensionContext) {
         await handleNewFile(uri, context);
     });
 
-    context.subscriptions.push(fileWatcher);
+    const saveListener = vscode.workspace.onDidSaveTextDocument(async (doc) => {
+        if (['cpp', 'py', 'java', 'js', 'ts'].includes(doc.languageId)) {
+            // Debounce rapid saves
+            if (saveDebounceTimer) clearTimeout(saveDebounceTimer);
+            saveDebounceTimer = setTimeout(async () => {
+                const action = await vscode.window.showInformationMessage(
+                    `DSAFlow: Log this save for ${path.basename(doc.fileName)}?`,
+                    'Log Problem', 'No'
+                );
+                if (action === 'Log Problem') {
+                    await handleNewFile(doc.uri, context);
+                }
+            }, 1500);
+        }
+    });
+
+    context.subscriptions.push(fileWatcher, saveListener);
 }
 
 async function handleNewFile(uri: vscode.Uri, context: vscode.ExtensionContext) {
     try {
         const config = vscode.workspace.getConfiguration('dsaflow');
         const apiUrl = config.get<string>('apiUrl');
-        // 🔐 Use SecretStorage instead of settings.json
         const token = await context.secrets.get(SECRET_KEY);
 
         if (!apiUrl) {
@@ -152,19 +212,23 @@ async function handleNewFile(uri: vscode.Uri, context: vscode.ExtensionContext) 
         const filePath = uri.fsPath;
         const fileName = path.basename(filePath);
 
-        await new Promise(resolve => setTimeout(resolve, 500));
+        // Streamlined UX: Prompt for URL only
+        const problemUrl = await vscode.window.showInputBox({
+            prompt: 'Paste the problem URL (optional) - Difficulty and Platform will be auto-detected',
+            placeHolder: 'https://leetcode.com/problems/...',
+            ignoreFocusOut: true
+        });
 
-        const platform = await vscode.window.showQuickPick(
-            ['LeetCode', 'GeeksForGeeks', 'Codeforces', 'HackerRank', 'Other'],
-            { placeHolder: 'Select the platform for this problem', ignoreFocusOut: true }
-        );
-        if (!platform) return;
+        // Auto-detect Platform and Difficulty
+        let platform = 'Other';
+        let difficulty = 'Medium'; // Defaulting to Medium for now since we can't easily auto-detect difficulty without hitting an external API.
 
-        const difficulty = await vscode.window.showQuickPick(
-            ['Easy', 'Medium', 'Hard'],
-            { placeHolder: 'Select the difficulty', ignoreFocusOut: true }
-        );
-        if (!difficulty) return;
+        if (problemUrl) {
+            if (problemUrl.includes('leetcode.com')) platform = 'LeetCode';
+            else if (problemUrl.includes('geeksforgeeks.org')) platform = 'GeeksForGeeks';
+            else if (problemUrl.includes('codeforces.com')) platform = 'Codeforces';
+            else if (problemUrl.includes('hackerrank.com')) platform = 'HackerRank';
+        }
 
         const dirName = path.dirname(filePath);
         const topic = path.basename(dirName);
@@ -175,7 +239,6 @@ async function handleNewFile(uri: vscode.Uri, context: vscode.ExtensionContext) 
         const language = languageMap[extName] || 'Unknown';
         const problemName = path.basename(fileName, extName);
 
-        // 📝 New Phase 9 Feature: Capture Code Snapshot
         let codeSnippet = '';
         try {
             const document = await vscode.workspace.openTextDocument(uri);
@@ -183,13 +246,6 @@ async function handleNewFile(uri: vscode.Uri, context: vscode.ExtensionContext) 
         } catch (err) {
             console.error('Could not read code snippet:', err);
         }
-
-        // 🔗 New Phase 9 Feature: Prompt for Problem URL
-        const problemUrl = await vscode.window.showInputBox({
-            prompt: 'Paste the problem URL (optional)',
-            placeHolder: 'https://leetcode.com/problems/...',
-            ignoreFocusOut: true
-        });
 
         const payload = {
             topic,
@@ -227,9 +283,15 @@ async function handleNewFile(uri: vscode.Uri, context: vscode.ExtensionContext) 
             pending.push(payload);
             await context.globalState.update(PENDING_KEY, pending);
 
-            vscode.window.showWarningMessage(
-                `DSAFlow: API unreachable. Problem saved to offline queue (${pending.length} pending).`
-            );
+            if (apiError.response?.status === 401) {
+                vscode.window.showErrorMessage('DSAFlow: Authentication failed. You might be logged out or using an expired token. Please run "DSAFlow: Login".');
+            } else if (apiError.response?.status === 429) {
+                vscode.window.showWarningMessage('DSAFlow: Too many requests. Please try again in 15 minutes.');
+            } else {
+                vscode.window.showWarningMessage(
+                    `DSAFlow: API Error (${apiError.response?.status || 'Network'}). Problem saved to offline queue (${pending.length} pending).`
+                );
+            }
         }
 
     } catch (error: any) {

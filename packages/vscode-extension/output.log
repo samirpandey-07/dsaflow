@@ -1,0 +1,121 @@
+﻿**********************
+Windows PowerShell transcript start
+Start time: 20260310235257
+Username: TILAK\Lenovo
+RunAs User: TILAK\Lenovo
+Configuration Name: 
+Machine: TILAK (Microsoft Windows NT 10.0.26200.0)
+Host Application: C:\WINDOWS\System32\WindowsPowerShell\v1.0\powershell.exe -noexit -command try { . "c:\Users\Lenovo\AppData\Local\Programs\Antigravity\resources\app\out\vs\workbench\contrib\terminal\common\scripts\shellIntegration.ps1" } catch {}
+Process ID: 33720
+PSVersion: 5.1.26100.7920
+PSEdition: Desktop
+PSCompatibleVersions: 1.0, 2.0, 3.0, 4.0, 5.0, 5.1.26100.7920
+BuildVersion: 10.0.26100.7920
+CLRVersion: 4.0.30319.42000
+WSManStackVersion: 3.0
+PSRemotingProtocolVersion: 2.3
+SerializationVersion: 1.1.0.1
+**********************
+Transcript started, output file is output.log
+
+const SECRET_KEY =
+'dsaflow-token';
+            let token
+= null;
+                if (par
+am.startsWith('token=')
+) {
+
+token = param.substring
+('token='.length);
+            outputChann
+el.appendLine(`[URI
+Handler] Extracted
+token length:
+${token?.length}`);
+            if (token)
+{
+                await c
+ontext.secrets.store(SE
+CRET_KEY, token);
+                outputC
+hannel.appendLine(`[URI
+ Handler] Token stored
+successfully in
+SecretStorage.`);
+                outputC
+hannel.appendLine(`[URI
+ Handler] Failed to
+extract token.`);
+                vscode.
+window.showErrorMessage
+('DSAFlow: Login
+failed. No token
+received.');
+    // ðŸšª Logout
+command (Clears Token
+& Queue)
+        await context.g
+lobalState.update(PENDI
+NG_KEY, []); // Clear
+queue to avoid
+retrying with bad
+tokens
+        outputChannel.a
+ppendLine(`[Logout]
+Token and offline
+queue cleared.`);
+    const token =
+await context.secrets.g
+et(SECRET_KEY);
+    if (!apiUrl ||
+!token) return;
+
+headers: {
+'Authorization':
+`Bearer ${token}` }
+        const token =
+await context.secrets.g
+et(SECRET_KEY);
+        if (!token) {
+
+'DSAFlow: No token
+found. Please log in
+to start tracking.',
+
+headers: {
+'Authorization':
+`Bearer ${token}` }
+                vscode.
+window.showErrorMessage
+('DSAFlow:
+Authentication failed.
+You might be logged
+out or using an
+expired token. Please
+run "DSAFlow:
+Login".');
+    const token =
+await extensionContext.
+secrets.get(SECRET_KEY)
+;
+    if (!apiUrl ||
+!token) return;
+
+headers: {
+'Authorization':
+`Bearer ${token}` }
+    const token =
+await context.secrets.g
+et(SECRET_KEY);
+        if (token) {
+            const res
+= await
+axios.get(apiUrl, {
+headers: {
+'Authorization':
+`Bearer ${token}` } });
+**********************
+Windows PowerShell transcript end
+End time: 20260310235257
+**********************

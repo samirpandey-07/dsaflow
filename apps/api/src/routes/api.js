@@ -1,6 +1,6 @@
 const express = require('express');
 const router = express.Router();
-const { supabase } = require('../db/supabase');
+const { supabase, createAuthClient } = require('../db/supabase');
 const { z } = require('zod');
 const { GoogleGenerativeAI } = require('@google/generative-ai');
 const cache = require('../lib/cache');
@@ -21,25 +21,28 @@ const problemSchema = z.object({
     code_snippet: z.string().optional()
 });
 
-// Middleware for auth
 const verifyAuth = async (req, res, next) => {
     try {
         const token = req.headers.authorization?.split(' ')[1];
-        if (!token) {
-            if (process.env.SUPABASE_ANON_KEY && process.env.NODE_ENV !== 'production') {
-                req.user = { id: '00000000-0000-0000-0000-000000000000' };
+        const isDevelopment = process.env.NODE_ENV !== 'production';
+
+        if (token) {
+            console.log(`[Auth Debug] Incoming token: ${token.substring(0, 15)}...${token.slice(-10)}`);
+            const { data: { user }, error } = await supabase.auth.getUser(token);
+            if (user && !error) {
+                req.user = user;
+                req.supabase = createAuthClient(token);
                 return next();
             }
-            throw new Error('No token provided');
+            if (error) {
+                console.error('[Auth Debug] Supabase rejection reason:', error.message, error.name, error.status);
+            }
+        } else {
+            console.warn('[Auth Debug] No token provided in header');
         }
-
-        const { data: { user }, error } = await supabase.auth.getUser(token);
-        if (error || !user) throw new Error('Invalid token');
-
-        req.user = user;
-        next();
+        throw new Error('Unauthorized');
     } catch (error) {
-        res.status(401).json({ status: 'error', message: 'Unauthorized' });
+        res.status(401).json({ status: 'error', message: 'Unauthorized', details: error.message });
     }
 };
 
@@ -83,7 +86,7 @@ router.post('/problems', verifyAuth, async (req, res) => {
         const validatedData = problemSchema.parse(req.body);
         const userId = req.user.id;
 
-        const { data: problemData, error: problemError } = await supabase
+        const { data: problemData, error: problemError } = await req.supabase
             .from('problems')
             .insert([{
                 user_id: userId,
@@ -103,12 +106,12 @@ router.post('/problems', verifyAuth, async (req, res) => {
         if (problemError) throw problemError;
 
         // Ensure topic exists in topics table for global autocomplete / tracking
-        await supabase
+        await req.supabase
             .from('topics')
             .upsert([{ name: validatedData.topic }], { onConflict: 'name' });
 
         // Update User Stats (Streaks)
-        const { data: statsRow } = await supabase
+        const { data: statsRow } = await req.supabase
             .from('user_stats')
             .select('last_solve_date, current_streak, longest_streak')
             .eq('user_id', userId)
@@ -117,7 +120,7 @@ router.post('/problems', verifyAuth, async (req, res) => {
         const today = new Date().toISOString().split('T')[0];
 
         if (!statsRow) {
-            await supabase.from('user_stats').insert([{
+            await req.supabase.from('user_stats').insert([{
                 user_id: userId,
                 current_streak: 1,
                 longest_streak: 1,
@@ -144,7 +147,7 @@ router.post('/problems', verifyAuth, async (req, res) => {
             }
 
             if (rDiff > 0) {
-                await supabase
+                await req.supabase
                     .from('user_stats')
                     .update({
                         current_streak: newStreak,
@@ -187,7 +190,7 @@ router.post('/problems/:id/revise', verifyAuth, async (req, res) => {
         const userId = req.user.id;
 
         // Get current revision count
-        const { data: problem, error: getError } = await supabase
+        const { data: problem, error: getError } = await req.supabase
             .from('problems')
             .select('revision_count')
             .eq('id', id)
@@ -203,7 +206,7 @@ router.post('/problems/:id/revise', verifyAuth, async (req, res) => {
         const daysToAdd = intervals[Math.min(newCount, intervals.length - 1)];
         const nextDate = new Date(Date.now() + daysToAdd * 24 * 60 * 60 * 1000).toISOString();
 
-        const { data, error } = await supabase
+        const { data, error } = await req.supabase
             .from('problems')
             .update({
                 revision_count: newCount,
@@ -231,7 +234,7 @@ router.post('/problems/:id/revise', verifyAuth, async (req, res) => {
 router.get('/revision-queue', verifyAuth, async (req, res) => {
     try {
         const userId = req.user.id;
-        const { data, error } = await supabase
+        const { data, error } = await req.supabase
             .from('problems')
             .select('*')
             .eq('user_id', userId)
@@ -256,7 +259,7 @@ router.get('/revision-queue', verifyAuth, async (req, res) => {
  */
 router.get('/user/stats', verifyAuth, async (req, res) => {
     try {
-        const { data, error } = await supabase
+        const { data, error } = await req.supabase
             .from('user_stats')
             .select('*')
             .eq('user_id', req.user.id)
@@ -287,7 +290,7 @@ router.get('/stats', verifyAuth, async (req, res) => {
         if (cached) return res.status(200).json(cached);
 
         // Query the SQL view scoped to this user
-        const { data, error } = await supabase
+        const { data, error } = await req.supabase
             .from('user_difficulty_stats')
             .select('*')
             .eq('user_id', userId)
@@ -313,22 +316,53 @@ router.get('/stats', verifyAuth, async (req, res) => {
  * @swagger
  * /api/problems:
  *   get:
- *     summary: Get all logged problems
+ *     summary: Get all logged problems with cursor pagination
+ *     parameters:
+ *       - in: query
+ *         name: limit
+ *         schema:
+ *           type: integer
+ *           default: 50
+ *         description: Number of items to return
+ *       - in: query
+ *         name: cursor
+ *         schema:
+ *           type: string
+ *           format: date-time
+ *         description: Cursor (solved_at timestamp) for pagination
  *     responses:
  *       200:
  *         description: Successfully retrieved problems
  */
 router.get('/problems', verifyAuth, async (req, res) => {
     try {
-        // Scoped to current user + optimized column projection
-        const { data, error } = await supabase
+        const limit = parseInt(req.query.limit) || 50;
+        const cursor = req.query.cursor; // expected to be an ISO timestamp
+
+        let query = req.supabase
             .from('problems')
-            .select('id, problem_name, topic, difficulty, language, platform, solved_at, revision_count, next_revision_at')
+            .select('id, problem_name, topic, difficulty, language, platform, problem_url, code_snippet, solved_at, revision_count, next_revision_at')
             .eq('user_id', req.user.id)
-            .order('solved_at', { ascending: false });
+            .order('solved_at', { ascending: false })
+            .limit(limit + 1); // fetch one extra to determine if there's a next page
+
+        if (cursor) {
+            query = query.lt('solved_at', cursor);
+        }
+
+        const { data, error } = await query;
 
         if (error) throw error;
-        res.status(200).json(data);
+
+        const hasNextPage = data.length > limit;
+        const results = hasNextPage ? data.slice(0, limit) : data;
+        const nextCursor = hasNextPage ? results[results.length - 1].solved_at : null;
+
+        res.status(200).json({
+            data: results,
+            next_cursor: nextCursor,
+            has_next_page: hasNextPage
+        });
     } catch (error) {
         res.status(500).json({ status: 'error', message: error.message });
     }
@@ -367,7 +401,7 @@ router.post('/notes', verifyAuth, async (req, res) => {
         const { problem_id, note } = validatedData;
 
         // Ensure user actually owns this problem before letting them attach a note
-        const { data: problemCheck, error: checkError } = await supabase
+        const { data: problemCheck, error: checkError } = await req.supabase
             .from('problems')
             .select('id')
             .eq('id', problem_id)
@@ -378,7 +412,7 @@ router.post('/notes', verifyAuth, async (req, res) => {
             return res.status(403).json({ status: 'error', message: 'Not authorized to add notes to this problem' });
         }
 
-        const { data, error } = await supabase
+        const { data, error } = await req.supabase
             .from('notes')
             .insert([
                 { problem_id, content: note }
@@ -411,7 +445,7 @@ router.get('/analytics/velocity', verifyAuth, async (req, res) => {
         const cached = await cache.get(cacheKey);
         if (cached) return res.status(200).json(cached);
 
-        const { data, error } = await supabase
+        const { data, error } = await req.supabase
             .from('user_velocity')
             .select('*')
             .eq('user_id', userId)
@@ -467,11 +501,11 @@ router.get('/problems/:id/notes', verifyAuth, async (req, res) => {
         const userId = req.user.id;
 
         // Ownership check
-        const { data: problemCheck } = await supabase
+        const { data: problemCheck } = await req.supabase
             .from('problems').select('id').eq('id', id).eq('user_id', userId).single();
         if (!problemCheck) return res.status(403).json({ status: 'error', message: 'Not authorized' });
 
-        const { data, error } = await supabase
+        const { data, error } = await req.supabase
             .from('notes')
             .select('id, content, created_at')
             .eq('problem_id', id)
@@ -491,7 +525,7 @@ router.post('/problems/:id/analyze', verifyAuth, async (req, res) => {
         const { code } = req.body; // Optional: actual code content from the user
 
         // Fetch the problem record for context
-        const { data: problem, error: fetchError } = await supabase
+        const { data: problem, error: fetchError } = await req.supabase
             .from('problems')
             .select('problem_name, topic, difficulty, language')
             .eq('id', id)

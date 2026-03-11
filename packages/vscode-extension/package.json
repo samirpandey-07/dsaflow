@@ -49,6 +49,10 @@
                 "title": "DSAFlow: Login (Store Token Securely)"
             },
             {
+                "command": "dsaflow.logout",
+                "title": "DSAFlow: Logout (Clear Token & Queue)"
+            },
+            {
                 "command": "dsaflow.viewStats",
                 "title": "DSAFlow: View Stats"
             }

@@ -8,6 +8,18 @@ if (!supabaseUrl || !supabaseKey) {
     throw new Error('Supabase credentials missing! Please check your .env file.');
 }
 
+// Global anonymous client (for checking auth tokens, fetching public data)
 const supabase = createClient(supabaseUrl, supabaseKey);
 
-module.exports = { supabase, isMock: false };
+// 🔐 NEW: Request-scoped authenticated client for RLS
+const createAuthClient = (token) => {
+    return createClient(supabaseUrl, supabaseKey, {
+        global: {
+            headers: {
+                Authorization: `Bearer ${token}`
+            }
+        }
+    });
+};
+
+module.exports = { supabase, createAuthClient, isMock: false };

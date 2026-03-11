@@ -31,10 +31,11 @@ const swaggerOptions = {
 const swaggerDocs = swaggerJsDoc(swaggerOptions);
 app.use('/api-docs', swaggerUi.serve, swaggerUi.setup(swaggerDocs));
 
-// Rate limiting: max 100 requests per 15 minutes
+// Rate limiting: relax in development/testing (max 1000/15min), strict in production (100/15min)
+const isProd = process.env.NODE_ENV === 'production';
 const limiter = require('express-rate-limit')({
     windowMs: 15 * 60 * 1000,
-    max: 100,
+    max: isProd ? 100 : 1000,
     message: { status: 'error', message: 'Too many requests from this IP, please try again after 15 minutes' }
 });
 
