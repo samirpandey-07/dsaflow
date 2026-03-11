@@ -35,9 +35,9 @@ export default function LoginPage() {
 function LoginContent() {
     const router = useRouter();
     const searchParams = useSearchParams();
-    const isVSCode = searchParams.get('source') === 'vscode';
-    const scheme = searchParams.get('scheme') || 'vscode';
-    const extId = searchParams.get('extId') || 'dsaflow.dsaflow';
+    const isVSCode = searchParams?.get('source') === 'vscode';
+    const scheme = searchParams?.get('scheme') || 'vscode';
+    const extId = searchParams?.get('extId') || 'dsaflow.dsaflow';
 
     // Build the dynamic return URL so OAuth doesn't lose our VS Code params!
     const baseUrl = process.env.NEXT_PUBLIC_SITE_URL || (typeof window !== 'undefined' ? window.location.origin : 'http://localhost:3000');
