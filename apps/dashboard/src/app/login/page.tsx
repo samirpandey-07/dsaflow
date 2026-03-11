@@ -35,44 +35,32 @@ export default function LoginPage() {
 function LoginContent() {
     const router = useRouter();
     const searchParams = useSearchParams();
-    const isVSCode = searchParams?.get('source') === 'vscode';
-    const scheme = searchParams?.get('scheme') || 'vscode';
-    const extId = searchParams?.get('extId') || 'dsaflow.dsaflow';
 
-    // Build the dynamic return URL so OAuth doesn't lose our VS Code params!
-    const baseUrl = process.env.NEXT_PUBLIC_SITE_URL || (typeof window !== 'undefined' ? window.location.origin : 'http://localhost:3000');
-    let returnUrl = baseUrl;
-    // We must route back to the login page itself to trigger the handleRedirect flow
-    if (isVSCode) {
-        returnUrl = `${baseUrl}/login?source=vscode&scheme=${scheme}&extId=${extId}`;
-    }
-
+    // We'll calculate these in a state to be 100% build-safe
+    const [returnUrl, setReturnUrl] = useState('');
     const [checking, setChecking] = useState(true);
+
     useEffect(() => {
+        const isVSCode = searchParams?.get('source') === 'vscode';
+        const scheme = searchParams?.get('scheme') || 'vscode';
+        const extId = searchParams?.get('extId') || 'dsaflow.dsaflow';
+
+        const baseUrl = process.env.NEXT_PUBLIC_SITE_URL || window.location.origin;
+        let constructedUrl = baseUrl;
+        if (isVSCode) {
+            constructedUrl = `${baseUrl}/login?source=vscode&scheme=${scheme}&extId=${extId}`;
+        }
+        setReturnUrl(constructedUrl);
+
         const handleRedirect = async (session: any) => {
             if (isVSCode && session?.access_token) {
                 const redirectUrl = `${scheme}://${extId}/auth?token=${session.access_token}`;
-
-                console.log(`Redirecting to: ${redirectUrl}`);
                 window.location.href = redirectUrl;
-
-                // Fallback close text
-                document.body.innerHTML = `
-                    <div style="background:#0a0a0b;color:#fff;display:flex;align-items:center;justify-content:center;height:100vh;font-family:sans-serif;text-align:center;">
-                        <div>
-                            <h2>Authentication Successful! ✅</h2>
-                            <p>You can now close this tab and return to your editor.</p>
-                            <p style="color:#888;font-size:12px;margin-top:20px;">
-                                If it did not open automatically, click <a style="color:#a855f7" href="${redirectUrl}">here</a>.
-                            </p>
-                        </div>
-                    </div>`;
             } else {
                 router.replace('/');
             }
         };
 
-        // If already logged in, redirect immediately
         supabase.auth.getSession().then(({ data: { session } }) => {
             if (session) {
                 handleRedirect(session);
@@ -81,13 +69,12 @@ function LoginContent() {
             }
         });
 
-        // Listen for auth state changes (e.g. after successful login)
         const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, session) => {
             if (session) handleRedirect(session);
         });
 
         return () => subscription.unsubscribe();
-    }, [router, isVSCode]);
+    }, [router, searchParams]);
 
     if (checking) {
         return (
@@ -106,7 +93,6 @@ function LoginContent() {
                 {/* Header */}
                 <div className="text-center mb-8">
                     <div className="inline-flex items-center gap-2 mb-4">
-
                         <h1 className="text-3xl font-extrabold tracking-tight bg-gradient-to-r from-white to-white/60 bg-clip-text text-transparent">
                             DSAFlow
                         </h1>
