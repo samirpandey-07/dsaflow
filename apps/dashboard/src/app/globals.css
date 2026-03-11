@@ -1,0 +1,45 @@
+@import "tailwindcss";
+
+@theme {
+  --color-background: hsl(240, 10%, 3.9%);
+  --color-foreground: hsl(0, 0%, 98%);
+
+  --color-primary: hsl(252, 87%, 67%);
+  --color-primary-foreground: hsl(240, 5.9%, 10%);
+
+  /* Lightened from 15.9% to 20% for border visibility */
+  --color-muted: hsl(240, 3.7%, 20%);
+  /* Lightened significantly from 64.9% to 75% for readable text */
+  --color-muted-foreground: hsl(240, 5%, 75%);
+
+  --color-border: hsl(240, 3.7%, 20%);
+
+  --radius-xl: 0.75rem;
+}
+
+@layer base {
+  * {
+    border-color: var(--color-border);
+  }
+
+  body {
+    background-color: var(--color-background);
+    color: var(--color-foreground);
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
+  }
+
+  ::selection {
+    background-color: color-mix(in srgb, var(--color-primary) 30%, transparent);
+  }
+}
+
+@layer utilities {
+  .glass-panel {
+    background-color: rgb(255 255 255 / 0.05);
+    backdrop-filter: blur(24px);
+    border-width: 1px;
+    border-color: rgb(255 255 255 / 0.1);
+    box-shadow: 0 4px 30px rgba(0, 0, 0, 0.1);
+  }
+}
