@@ -15,8 +15,11 @@ async function createNote(client, userId, problemId, content) {
     });
 
     if (error) {
+        console.error('[Note Service] Database error creating note:', error);
         throw error;
     }
+
+    console.log(`[Note Service] Created note for problem ${problemId}`);
 
     return data;
 }
@@ -31,6 +34,7 @@ async function listNotes(client, userId, problemId) {
 
     const { data, error } = await noteRepository.listNotesByProblem(client, problemId);
     if (error) {
+        console.error('[Note Service] Database error listing notes:', error);
         throw error;
     }
 
