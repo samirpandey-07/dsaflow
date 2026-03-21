@@ -1,5 +1,0 @@
-{
-  "buildCommand": "npm run build --workspace=dashboard",
-  "outputDirectory": "apps/dashboard/.next",
-  "framework": "nextjs"
-}
