@@ -37,6 +37,56 @@ interface ProblemLite {
     solved_at: string;
 }
 
+interface TopicItem {
+    topic: string;
+    solved: number;
+    easy: number;
+    medium: number;
+    hard: number;
+    mastery_score: number;
+}
+
+interface PlatformItem {
+    platform: string;
+    count: number;
+}
+
+interface Achievement {
+    id: string;
+    title: string;
+    description: string;
+    unlocked: boolean;
+}
+
+interface Insights {
+    strongest_topic: string | null;
+    recommended_focus: string;
+    next_problem_suggestion: string;
+    difficulty_progression: string;
+    patterns: string[];
+    weak_topics: { topic: string; count: number }[];
+}
+
+interface RevisionItem {
+    id: string;
+    problem_name: string;
+    topic: string;
+    difficulty: string;
+    next_revision_at: string;
+    revision_count: number;
+}
+
+interface RevisionQueueData {
+    due_today: RevisionItem[];
+    overdue: RevisionItem[];
+    upcoming: RevisionItem[];
+    counts: {
+        due_today: number;
+        overdue: number;
+        upcoming: number;
+    };
+}
+
 const containerVars: Variants = {
     hidden: { opacity: 0 },
     visible: {
@@ -155,31 +205,31 @@ export default function Dashboard() {
     const topicsQuery = useQuery({
         queryKey: ['topics', user?.id],
         enabled: !!user,
-        queryFn: () => apiFetch<Record<string, unknown>[]>('/analytics/topics'),
+        queryFn: () => apiFetch<TopicItem[]>('/analytics/topics'),
     });
 
     const platformsQuery = useQuery({
         queryKey: ['platforms', user?.id],
         enabled: !!user,
-        queryFn: () => apiFetch<{ platform: string; count: number }[]>('/analytics/platforms'),
+        queryFn: () => apiFetch<PlatformItem[]>('/analytics/platforms'),
     });
 
     const revisionsQuery = useQuery({
         queryKey: ['revisions', user?.id],
         enabled: !!user,
-        queryFn: () => apiFetch<Record<string, unknown>>('/revision-queue'),
+        queryFn: () => apiFetch<RevisionQueueData>('/revision-queue'),
     });
 
     const achievementsQuery = useQuery({
         queryKey: ['achievements', user?.id],
         enabled: !!user,
-        queryFn: () => apiFetch<Record<string, unknown>[]>('/achievements'),
+        queryFn: () => apiFetch<Achievement[]>('/achievements'),
     });
 
     const insightsQuery = useQuery({
         queryKey: ['insights', user?.id],
         enabled: !!user,
-        queryFn: () => apiFetch<Record<string, unknown>>('/analytics/insights'),
+        queryFn: () => apiFetch<Insights>('/analytics/insights'),
     });
 
     const problemLiteQuery = useQuery({
