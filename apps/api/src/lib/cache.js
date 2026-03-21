@@ -77,4 +77,18 @@ async function del(key) {
     }
 }
 
-module.exports = { get, set, del, DEFAULTS };
+async function delByPrefix(prefix) {
+    if (!client) return;
+    try {
+        const stream = client.scanStream({ match: `${prefix}*`, count: 100 });
+        for await (const keys of stream) {
+            if (keys.length) {
+                await client.del(...keys);
+            }
+        }
+    } catch {
+        // Silent fail
+    }
+}
+
+module.exports = { get, set, del, delByPrefix, DEFAULTS };

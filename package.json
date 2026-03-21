@@ -8,7 +8,11 @@
     "packages/*"
   ],
   "scripts": {
-    "dev": "npm run dev --workspaces"
+    "dev": "npm run dev --workspaces",
+    "supabase:link": "cd dsaflow && npx supabase link",
+    "supabase:push": "cd dsaflow && npx supabase db push",
+    "supabase:start": "cd dsaflow && npx supabase start",
+    "supabase:stop": "cd dsaflow && npx supabase stop"
   },
   "main": "index.js",
   "keywords": [],

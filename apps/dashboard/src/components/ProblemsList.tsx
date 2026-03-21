@@ -1,8 +1,13 @@
-import React, { useState, useMemo } from 'react';
+'use client';
+
+import React, { useMemo, useState } from 'react';
+import { useInfiniteQuery, useQueryClient } from '@tanstack/react-query';
+import { motion, AnimatePresence } from 'framer-motion';
+import { Bot, Code2, ExternalLink, Filter, MessageSquare, RefreshCcw, Search, Trash2, ChevronDown } from 'lucide-react';
 import CodeAnalysisModal from './CodeAnalysisModal';
 import NoteModal from './NoteModal';
 import CodeViewerModal from './CodeViewerModal';
-import { Bot, MessageSquare, Code2, ExternalLink, Search, Filter } from 'lucide-react';
+import { apiFetch } from '../lib/api';
 
 interface Problem {
     id: string;
@@ -14,236 +19,283 @@ interface Problem {
     problem_url: string | null;
     code_snippet: string | null;
     solved_at: string;
+    revision_count: number;
+    next_revision_at: string | null;
 }
 
-export default function ProblemsList({ problems, loading }: { problems: Problem[], loading: boolean }) {
-    // Action Modals State
-    const [selectedAnalysis, setSelectedAnalysis] = useState<{ id: string, name: string } | null>(null);
-    const [selectedNote, setSelectedNote] = useState<{ id: string, name: string } | null>(null);
-    const [selectedCode, setSelectedCode] = useState<{ name: string, code: string | null, language: string } | null>(null);
+const difficulties = ['All', 'Easy', 'Medium', 'Hard'];
+const revisionOptions = ['all', 'due', 'upcoming'];
 
-    // Search and Filter State
+const rowVars = {
+    hidden: { opacity: 0, x: -10 },
+    visible: { opacity: 1, x: 0 },
+};
+
+export default function ProblemsList() {
+    const queryClient = useQueryClient();
+    const [selectedAnalysis, setSelectedAnalysis] = useState<{ id: string; name: string } | null>(null);
+    const [selectedNote, setSelectedNote] = useState<{ id: string; name: string } | null>(null);
+    const [selectedCode, setSelectedCode] = useState<{ name: string; code: string | null; language: string } | null>(null);
+
     const [searchQuery, setSearchQuery] = useState('');
     const [filterTopic, setFilterTopic] = useState('All');
     const [filterDifficulty, setFilterDifficulty] = useState('All');
     const [filterPlatform, setFilterPlatform] = useState('All');
+    const [revisionStatus, setRevisionStatus] = useState('all');
+    const [sortBy, setSortBy] = useState('solved_at');
+    const [sortOrder, setSortOrder] = useState<'asc' | 'desc'>('desc');
 
-    // Extract unique options for dropdowns
-    const uniqueTopics = useMemo(() => Array.from(new Set(problems.map(p => p.topic))), [problems]);
-    const uniquePlatforms = useMemo(() => Array.from(new Set(problems.map(p => p.platform).filter(Boolean))), [problems]);
+    const queryKey = ['problems-table', searchQuery, filterTopic, filterDifficulty, filterPlatform, revisionStatus, sortBy, sortOrder];
 
-    // Apply strict filtering
-    const filteredProblems = useMemo(() => {
-        return problems.filter(p => {
-            const matchSearch = p.problem_name.toLowerCase().includes(searchQuery.toLowerCase());
-            const matchTopic = filterTopic === 'All' || p.topic === filterTopic;
-            const matchDifficulty = filterDifficulty === 'All' || p.difficulty === filterDifficulty;
-            const matchPlatform = filterPlatform === 'All' || p.platform === filterPlatform;
-            return matchSearch && matchTopic && matchDifficulty && matchPlatform;
-        });
-    }, [problems, searchQuery, filterTopic, filterDifficulty, filterPlatform]);
+    const problemsQuery = useInfiniteQuery({
+        queryKey,
+        initialPageParam: null as string | null,
+        queryFn: async ({ pageParam }) => {
+            const params = new URLSearchParams();
+            params.set('limit', '20');
+            params.set('sort_by', sortBy);
+            params.set('sort_order', sortOrder);
+            if (pageParam) params.set('cursor', pageParam);
+            if (searchQuery) params.set('search', searchQuery);
+            if (filterTopic !== 'All') params.set('topic', filterTopic);
+            if (filterDifficulty !== 'All') params.set('difficulty', filterDifficulty);
+            if (filterPlatform !== 'All') params.set('platform', filterPlatform);
+            if (revisionStatus !== 'all') params.set('revision_status', revisionStatus);
+            return apiFetch<{ items: Problem[]; next_cursor: string | null; has_next_page: boolean }>(`/problems?${params.toString()}`);
+        },
+        getNextPageParam: (lastPage) => lastPage.has_next_page ? lastPage.next_cursor : undefined,
+    });
 
-    if (loading) {
-        return (
-            <div className="space-y-4">
-                {[1, 2, 3].map(i => (
-                    <div key={i} className="h-20 bg-white/5 animate-pulse rounded-xl border border-white/5"></div>
-                ))}
-            </div>
-        );
+    const allProblems = useMemo(
+        () => problemsQuery.data?.pages.flatMap((page) => page.items) || [],
+        [problemsQuery.data],
+    );
+
+    const topicOptions = useMemo(
+        () => ['All', ...Array.from(new Set(allProblems.map((problem) => problem.topic))).sort()],
+        [allProblems],
+    );
+    const platformOptions = useMemo(
+        () => ['All', ...Array.from(new Set(allProblems.map((problem) => problem.platform || 'Other'))).sort()],
+        [allProblems],
+    );
+
+    async function deleteProblem(id: string) {
+        await apiFetch(`/problems/${id}`, { method: 'DELETE' });
+        await queryClient.invalidateQueries({ queryKey: ['problems-table'] });
+        await queryClient.invalidateQueries({ queryKey: ['overview'] });
+        await queryClient.invalidateQueries({ queryKey: ['activity'] });
+        await queryClient.invalidateQueries({ queryKey: ['topics'] });
+        await queryClient.invalidateQueries({ queryKey: ['platforms'] });
+        await queryClient.invalidateQueries({ queryKey: ['revisions'] });
     }
 
-    if (!problems.length) {
-        return (
-            <div className="flex flex-col items-center justify-center p-12 text-center text-muted-foreground border border-dashed border-white/10 rounded-xl">
-                <p className="mb-2">No problems logged yet.</p>
-                <p className="text-sm">Start coding in VS Code and watch them appear here magically!</p>
-            </div>
-        );
-    }
+    const loading = problemsQuery.isLoading;
 
-    const getDifficultyColor = (diff: string) => {
-        switch (diff?.toLowerCase()) {
-            case 'easy': return 'text-blue-300 bg-blue-500/20 border-blue-400/40';
-            case 'medium': return 'text-orange-300 bg-orange-500/20 border-orange-400/40';
-            case 'hard': return 'text-red-300 bg-red-500/20 border-red-400/40';
-            default: return 'text-muted-foreground bg-white/10 border-white/20';
+    const getDifficultyColor = (difficulty: string) => {
+        switch (difficulty) {
+        case 'Easy':
+            return 'text-sky-400 border-sky-400/20 bg-sky-400/5';
+        case 'Medium':
+            return 'text-amber-400 border-amber-400/20 bg-amber-400/5';
+        case 'Hard':
+            return 'text-rose-400 border-rose-400/20 bg-rose-400/5';
+        default:
+            return 'text-white/40 border-white/10 bg-white/5';
         }
     };
 
     return (
-        <div className="w-full flex flex-col gap-4">
-
-            {/* 🔍 Search & Filter Control Bar */}
-            <div className="flex flex-col md:flex-row gap-4 bg-[#0a0a0b] p-4 rounded-xl border border-white/10 shadow-lg">
-                <div className="relative flex-1">
-                    <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
+        <div className="flex flex-col space-y-8">
+            <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4 xl:grid-cols-7">
+                <div className="relative xl:col-span-2">
+                    <Search className="absolute left-4 top-1/2 h-4 w-4 -translate-y-1/2 text-white/20" />
                     <input
-                        type="text"
-                        placeholder="Search problems..."
                         value={searchQuery}
                         onChange={(e) => setSearchQuery(e.target.value)}
-                        className="w-full bg-white/5 border border-white/10 rounded-lg pl-10 pr-4 py-2 text-sm text-white placeholder:text-white/30 focus:outline-none focus:ring-2 focus:ring-primary/50 transition-all"
+                        placeholder="Search for problems..."
+                        className="w-full rounded-2xl border border-white/5 bg-white/[0.03] py-3.5 pl-11 pr-4 font-inter text-sm text-white placeholder:text-white/20 outline-none transition focus:border-emerald-500/30 focus:bg-white/[0.05]"
                     />
                 </div>
 
-                <div className="flex gap-2 items-center flex-wrap md:flex-nowrap">
-                    <Filter className="w-4 h-4 text-muted-foreground hidden md:block" />
-
-                    <select
-                        value={filterTopic} onChange={(e) => setFilterTopic(e.target.value)}
-                        className="bg-white/5 border border-white/10 rounded-lg px-3 py-2 text-sm text-white focus:outline-none focus:ring-2 focus:ring-primary/50 appearance-none cursor-pointer"
-                    >
-                        <option value="All">All Topics</option>
-                        {uniqueTopics.map(t => <option key={t} value={t}>{t}</option>)}
-                    </select>
-
-                    <select
-                        value={filterDifficulty} onChange={(e) => setFilterDifficulty(e.target.value)}
-                        className="bg-white/5 border border-white/10 rounded-lg px-3 py-2 text-sm text-white focus:outline-none focus:ring-2 focus:ring-primary/50 appearance-none cursor-pointer"
-                    >
-                        <option value="All">All Difficulties</option>
-                        <option value="Easy">Easy</option>
-                        <option value="Medium">Medium</option>
-                        <option value="Hard">Hard</option>
-                    </select>
-
-                    {uniquePlatforms.length > 0 && (
+                {[
+                    { value: filterTopic, setter: setFilterTopic, options: topicOptions, label: 'Topic' },
+                    { value: filterDifficulty, setter: setFilterDifficulty, options: difficulties, label: 'Difficulty' },
+                    { value: filterPlatform, setter: setFilterPlatform, options: platformOptions, label: 'Platform' },
+                    { value: revisionStatus, setter: setRevisionStatus, options: revisionOptions, label: 'Status' }
+                ].map((select, i) => (
+                    <div key={i} className="relative">
                         <select
-                            value={filterPlatform} onChange={(e) => setFilterPlatform(e.target.value)}
-                            className="bg-white/5 border border-white/10 rounded-lg px-3 py-2 text-sm text-white focus:outline-none focus:ring-2 focus:ring-primary/50 appearance-none cursor-pointer"
+                            value={select.value}
+                            onChange={(e) => select.setter(e.target.value)}
+                            className="w-full appearance-none rounded-2xl border border-white/5 bg-white/[0.03] py-3.5 pl-4 pr-10 font-inter text-sm font-semibold text-white/60 outline-none transition hover:border-white/10 focus:border-emerald-500/30"
                         >
-                            <option value="All">All Platforms</option>
-                            {uniquePlatforms.map(p => <option key={p} value={p}>{p}</option>)}
+                            {select.options.map((opt) => (
+                                <option key={opt} value={opt} className="bg-[#03080c] text-white">{opt}</option>
+                            ))}
                         </select>
-                    )}
+                        <ChevronDown className="pointer-events-none absolute right-4 top-1/2 h-4 w-4 -translate-y-1/2 text-white/20" />
+                    </div>
+                ))}
+
+                <button
+                    onClick={() => setSortOrder(curr => curr === 'asc' ? 'desc' : 'asc')}
+                    className="rounded-2xl border border-white/10 bg-white/5 px-4 font-inter text-xs font-bold uppercase tracking-wider text-white/40 transition hover:bg-white/10 hover:text-white"
+                >
+                    {sortOrder === 'desc' ? 'Newest' : 'Oldest'}
+                </button>
+            </div>
+
+            <div className="overflow-hidden rounded-[38px] border border-white/10 bg-white/[0.01] backdrop-blur-3xl shadow-2xl">
+                <div className="border-b border-white/5 bg-white/[0.02] p-8">
+                    <div className="flex items-center justify-between">
+                        <div>
+                            <p className="font-outfit text-xs font-bold uppercase tracking-[0.3em] text-emerald-400">Archive</p>
+                            <h3 className="mt-2 font-outfit text-3xl font-black text-white">Problem Vault</h3>
+                        </div>
+                        <div className="flex items-center gap-3 rounded-2xl border border-white/5 bg-white/5 px-5 py-2.5">
+                            <Filter className="h-4 w-4 text-emerald-400" />
+                            <span className="font-outfit text-sm font-bold text-white/40">{allProblems.length} Collected</span>
+                        </div>
+                    </div>
                 </div>
+
+                <div className="overflow-x-auto custom-scrollbar">
+                    <table className="w-full text-left">
+                        <thead>
+                            <tr className="border-b border-white/5 bg-white/[0.01]">
+                                {['Problem', 'Topic', 'Difficulty', 'Platform', 'Revision', 'Actions'].map((h) => (
+                                    <th key={h} className="px-8 py-5 font-outfit text-[10px] font-black uppercase tracking-[0.2em] text-white/20">
+                                        {h}
+                                    </th>
+                                ))}
+                            </tr>
+                        </thead>
+                        <tbody>
+                            {loading ? (
+                                Array.from({ length: 5 }).map((_, i) => (
+                                    <tr key={i} className="border-b border-white/[0.02]">
+                                        <td colSpan={6} className="px-8 py-6">
+                                            <div className="h-12 w-full animate-pulse rounded-2xl bg-white/[0.03]" />
+                                        </td>
+                                    </tr>
+                                ))
+                            ) : (
+                                <AnimatePresence mode="popLayout">
+                                    {allProblems.map((problem) => (
+                                        <motion.tr
+                                            key={problem.id}
+                                            variants={rowVars}
+                                            initial="hidden"
+                                            animate="visible"
+                                            exit={{ opacity: 0, scale: 0.98 }}
+                                            className="group border-b border-white/[0.02] transition-colors hover:bg-white/[0.02]"
+                                        >
+                                            <td className="px-8 py-6">
+                                                <div className="flex items-center gap-3">
+                                                    <span className="font-inter text-base font-bold text-white transition-colors group-hover:text-emerald-400">
+                                                        {problem.problem_name}
+                                                    </span>
+                                                    {problem.problem_url && (
+                                                        <a href={problem.problem_url} target="_blank" rel="noreferrer" className="opacity-0 transition-opacity group-hover:opacity-100">
+                                                            <ExternalLink className="h-4 w-4 text-white/20 hover:text-emerald-400" />
+                                                        </a>
+                                                    )}
+                                                </div>
+                                                <p className="mt-1 text-[10px] font-bold text-white/20 uppercase tracking-wider">
+                                                    {new Date(problem.solved_at).toLocaleDateString(undefined, { dateStyle: 'long' })}
+                                                </p>
+                                            </td>
+                                            <td className="px-8 py-6">
+                                                <span className="font-inter text-sm font-semibold text-white/50">{problem.topic}</span>
+                                            </td>
+                                            <td className="px-8 py-6">
+                                                <span className={`inline-flex rounded-xl border px-3 py-1 font-outfit text-[10px] font-black uppercase tracking-wider ${getDifficultyColor(problem.difficulty)}`}>
+                                                    {problem.difficulty}
+                                                </span>
+                                            </td>
+                                            <td className="px-8 py-6 text-sm font-bold text-white/40">{problem.platform}</td>
+                                            <td className="px-8 py-6">
+                                                <div className="font-inter text-sm font-black text-white/60">REV {problem.revision_count}</div>
+                                                <div className="text-[10px] font-bold text-white/20 uppercase">
+                                                    {problem.next_revision_at ? new Date(problem.next_revision_at).toLocaleDateString() : 'Pending'}
+                                                </div>
+                                            </td>
+                                            <td className="px-8 py-6">
+                                                <div className="flex justify-end gap-2">
+                                                    {[
+                                                        { icon: Code2, color: 'text-emerald-400', bg: 'bg-emerald-400/10', border: 'border-emerald-400/20', action: () => setSelectedCode({ name: problem.problem_name, code: problem.code_snippet, language: problem.language }) },
+                                                        { icon: MessageSquare, color: 'text-sky-400', bg: 'bg-sky-400/10', border: 'border-sky-400/20', action: () => setSelectedNote({ id: problem.id, name: problem.problem_name }) },
+                                                        { icon: Bot, color: 'text-fuchsia-400', bg: 'bg-fuchsia-400/10', border: 'border-fuchsia-400/20', action: () => setSelectedAnalysis({ id: problem.id, name: problem.problem_name }) },
+                                                        { icon: RefreshCcw, color: 'text-amber-400', bg: 'bg-amber-400/10', border: 'border-amber-400/20', action: async () => {
+                                                            await apiFetch(`/problems/${problem.id}/revise`, { method: 'POST', body: JSON.stringify({ action: 'complete' }) });
+                                                            queryClient.invalidateQueries({ queryKey: ['problems-table'] });
+                                                            queryClient.invalidateQueries({ queryKey: ['revisions'] });
+                                                        } },
+                                                        { icon: Trash2, color: 'text-rose-400', bg: 'bg-rose-400/10', border: 'border-rose-400/20', action: () => deleteProblem(problem.id) }
+                                                    ].map((btn, idx) => (
+                                                        <motion.button
+                                                            key={idx}
+                                                            whileHover={{ scale: 1.1, y: -2 }}
+                                                            whileTap={{ scale: 0.9 }}
+                                                            onClick={btn.action}
+                                                            className={`rounded-xl border ${btn.border} ${btn.bg} p-2 ${btn.color} transition-all hover:shadow-[0_0_15px_-3px_rgba(255,255,255,0.1)]`}
+                                                        >
+                                                            <btn.icon className="h-4 w-4" />
+                                                        </motion.button>
+                                                    ))}
+                                                </div>
+                                            </td>
+                                        </motion.tr>
+                                    ))}
+                                </AnimatePresence>
+                            )}
+                        </tbody>
+                    </table>
+                </div>
+
+                {problemsQuery.hasNextPage && (
+                    <div className="flex justify-center border-t border-white/5 bg-white/[0.01] p-8">
+                        <motion.button
+                            whileHover={{ scale: 1.05 }}
+                            whileTap={{ scale: 0.95 }}
+                            disabled={problemsQuery.isFetchingNextPage}
+                            onClick={() => problemsQuery.fetchNextPage()}
+                            className="rounded-3xl border border-white/10 bg-white/5 px-10 py-4 font-outfit text-sm font-black uppercase tracking-widest text-white/60 transition-colors hover:bg-white/10 hover:text-white"
+                        >
+                            {problemsQuery.isFetchingNextPage ? 'Loading...' : 'Expand Vault'}
+                        </motion.button>
+                    </div>
+                )}
             </div>
 
-            {/* 📋 Results Table */}
-            <div className="overflow-x-auto w-full bg-[#0a0a0b] rounded-xl border border-white/10 shadow-lg">
-                <table className="w-full text-left border-collapse">
-                    <thead>
-                        <tr className="border-b border-white/10 text-sm font-medium text-muted-foreground bg-white/[0.02]">
-                            <th className="py-3 px-4">Problem</th>
-                            <th className="py-3 px-4">Topic</th>
-                            <th className="py-3 px-4">Difficulty</th>
-                            <th className="py-3 px-4">Platform</th>
-                            <th className="py-3 px-4 text-right">Actions</th>
-                        </tr>
-                    </thead>
-                    <tbody className="divide-y divide-white/5">
-                        {filteredProblems.length === 0 ? (
-                            <tr>
-                                <td colSpan={5} className="py-8 text-center text-muted-foreground">
-                                    No problems match your search/filters.
-                                </td>
-                            </tr>
-                        ) : filteredProblems.map((problem) => (
-                            <tr key={problem.id} className="group hover:bg-white/[0.04] transition-colors">
-                                <td className="py-4 px-4">
-                                    <div className="flex flex-col gap-1">
-                                        <div className="flex items-center gap-2">
-                                            <span className="font-medium text-foreground group-hover:text-primary transition-colors">
-                                                {problem.problem_name}
-                                            </span>
-                                            {problem.problem_url && (
-                                                <a href={problem.problem_url} target="_blank" rel="noopener noreferrer"
-                                                    className="text-muted-foreground hover:text-emerald-400 transition-colors p-1"
-                                                    title="Open on platform"
-                                                >
-                                                    <ExternalLink className="w-3.5 h-3.5" />
-                                                </a>
-                                            )}
-                                        </div>
-                                        <span className="text-[10px] text-muted-foreground opacity-60">
-                                            {new Date(problem.solved_at).toLocaleString(undefined, { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' })}
-                                        </span>
-                                    </div>
-                                </td>
-                                <td className="py-4 px-4 text-muted-foreground">
-                                    <span className="px-2.5 py-1 rounded-full bg-white/5 text-xs font-medium border border-white/5 backdrop-blur-sm">
-                                        {problem.topic}
-                                    </span>
-                                </td>
-                                <td className="py-4 px-4">
-                                    <span className={`px-2.5 py-1 rounded-full text-xs font-semibold border backdrop-blur-sm ${getDifficultyColor(problem.difficulty)}`}>
-                                        {problem.difficulty || 'N/A'}
-                                    </span>
-                                </td>
-                                <td className="py-4 px-4">
-                                    <span className="text-xs font-medium text-muted-foreground">
-                                        {problem.platform || 'Other'}
-                                    </span>
-                                </td>
-                                <td className="py-4 px-4 text-right">
-                                    <div className="flex justify-end gap-2 items-center">
-                                        <span className="text-xs font-medium text-muted-foreground opacity-60 group-hover:opacity-100 transition-opacity mr-1">
-                                            {problem.language}
-                                        </span>
-
-                                        {/* View Code button */}
-                                        <button
-                                            onClick={() => setSelectedCode({ name: problem.problem_name, code: problem.code_snippet, language: problem.language })}
-                                            className="p-2 bg-emerald-500/10 hover:bg-emerald-500/20 text-emerald-400 border border-emerald-500/20 rounded-lg transition-all active:scale-95"
-                                            title="View Saved Code"
-                                        >
-                                            <Code2 className="w-3.5 h-3.5" />
-                                        </button>
-
-                                        {/* Notes button */}
-                                        <button
-                                            onClick={() => setSelectedNote({ id: problem.id, name: problem.problem_name })}
-                                            className="p-2 bg-blue-500/10 hover:bg-blue-500/20 text-blue-400 border border-blue-500/20 rounded-lg transition-all active:scale-95"
-                                            title="View / Add Notes"
-                                        >
-                                            <MessageSquare className="w-3.5 h-3.5" />
-                                        </button>
-
-                                        {/* AI Analyze button */}
-                                        <button
-                                            onClick={() => setSelectedAnalysis({ id: problem.id, name: problem.problem_name })}
-                                            className="p-2 bg-primary/10 hover:bg-primary/20 text-primary border border-primary/20 rounded-lg transition-all active:scale-95"
-                                            title="Analyze with AI"
-                                        >
-                                            <Bot className="w-3.5 h-3.5" />
-                                        </button>
-                                    </div>
-                                </td>
-                            </tr>
-                        ))}
-                    </tbody>
-                </table>
-            </div>
-
-            {/* Modals */}
-            {selectedAnalysis && (
-                <CodeAnalysisModal
-                    problemId={selectedAnalysis.id as any}
-                    problemName={selectedAnalysis.name}
-                    isOpen={!!selectedAnalysis}
-                    onClose={() => setSelectedAnalysis(null)}
-                />
-            )}
-
-            {selectedNote && (
-                <NoteModal
-                    problemId={selectedNote.id}
-                    problemName={selectedNote.name}
-                    isOpen={!!selectedNote}
-                    onClose={() => setSelectedNote(null)}
-                />
-            )}
-
-            {selectedCode && (
-                <CodeViewerModal
-                    problemName={selectedCode.name}
-                    codeSnippet={selectedCode.code}
-                    language={selectedCode.language}
-                    isOpen={!!selectedCode}
-                    onClose={() => setSelectedCode(null)}
-                />
-            )}
+            <AnimatePresence>
+                {selectedAnalysis && (
+                    <CodeAnalysisModal
+                        problemId={selectedAnalysis.id}
+                        problemName={selectedAnalysis.name}
+                        isOpen={!!selectedAnalysis}
+                        onClose={() => setSelectedAnalysis(null)}
+                    />
+                )}
+                {selectedNote && (
+                    <NoteModal
+                        problemId={selectedNote.id}
+                        problemName={selectedNote.name}
+                        isOpen={!!selectedNote}
+                        onClose={() => setSelectedNote(null)}
+                    />
+                )}
+                {selectedCode && (
+                    <CodeViewerModal
+                        problemName={selectedCode.name}
+                        codeSnippet={selectedCode.code}
+                        language={selectedCode.language}
+                        isOpen={!!selectedCode}
+                        onClose={() => setSelectedCode(null)}
+                    />
+                )}
+            </AnimatePresence>
         </div>
     );
 }

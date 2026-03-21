@@ -9,7 +9,28 @@ services:
     environment:
       - SUPABASE_URL=${SUPABASE_URL}
       - SUPABASE_ANON_KEY=${SUPABASE_ANON_KEY}
+      - SUPABASE_SERVICE_ROLE_KEY=${SUPABASE_SERVICE_ROLE_KEY}
+      - ALLOWED_ORIGINS=${ALLOWED_ORIGINS}
+      - API_BASE_URL=${API_BASE_URL}
+      - DASHBOARD_URL=${DASHBOARD_URL}
+      - REDIS_URL=${REDIS_URL}
+      - RESEND_API_KEY=${RESEND_API_KEY}
+      - FROM_EMAIL=${FROM_EMAIL}
       - PORT=3001
+    restart: always
+
+  worker:
+    build:
+      context: ./apps/api
+    command: node worker.js
+    environment:
+      - SUPABASE_URL=${SUPABASE_URL}
+      - SUPABASE_ANON_KEY=${SUPABASE_ANON_KEY}
+      - SUPABASE_SERVICE_ROLE_KEY=${SUPABASE_SERVICE_ROLE_KEY}
+      - DASHBOARD_URL=${DASHBOARD_URL}
+      - REDIS_URL=${REDIS_URL}
+      - RESEND_API_KEY=${RESEND_API_KEY}
+      - FROM_EMAIL=${FROM_EMAIL}
     restart: always
 
   dashboard:
@@ -18,6 +39,8 @@ services:
       args:
         - NEXT_PUBLIC_SUPABASE_URL=${SUPABASE_URL}
         - NEXT_PUBLIC_SUPABASE_ANON_KEY=${SUPABASE_ANON_KEY}
+        - NEXT_PUBLIC_API_URL=${NEXT_PUBLIC_API_URL}
+        - NEXT_PUBLIC_SITE_URL=${NEXT_PUBLIC_SITE_URL}
     ports:
       - "3000:3000"
     depends_on:

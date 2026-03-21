@@ -2,24 +2,24 @@
 
 import React, { useEffect, useState } from 'react';
 import { Bot, X, Zap, Shield, AlertTriangle, Lightbulb } from 'lucide-react';
-import { getAuthToken } from '../lib/auth';
+import { apiFetch } from '../lib/api';
 
 interface Analysis {
     time_complexity: string;
     space_complexity: string;
     bottlenecks: string;
     recommendations: string;
+    alternative_approach?: string;
+    pattern_detected?: string;
     edge_cases: string[];
 }
 
 interface CodeAnalysisModalProps {
-    problemId: number;
+    problemId: string;
     problemName: string;
     isOpen: boolean;
     onClose: () => void;
 }
-
-const API_BASE = 'http://localhost:3001/api';
 
 export default function CodeAnalysisModal({ problemId, problemName, isOpen, onClose }: CodeAnalysisModalProps) {
     const [analysis, setAnalysis] = useState<Analysis | null>(null);
@@ -30,16 +30,8 @@ export default function CodeAnalysisModal({ problemId, problemName, isOpen, onCl
             const fetchAnalysis = async () => {
                 setLoading(true);
                 try {
-                    const token = await getAuthToken();
-                    if (!token) { setLoading(false); return; }
-                    const res = await fetch(`${API_BASE}/problems/${problemId}/analyze`, {
-                        method: 'POST',
-                        headers: { 'Authorization': `Bearer ${token}` }
-                    });
-                    if (res.ok) {
-                        const data = await res.json();
-                        setAnalysis(data.analysis);
-                    }
+                    const data = await apiFetch<Analysis>(`/problems/${problemId}/analyze`, { method: 'POST' });
+                    setAnalysis(data);
                 } catch (err) {
                     console.error('Failed to fetch analysis:', err);
                 } finally {
@@ -140,6 +132,23 @@ export default function CodeAnalysisModal({ problemId, problemName, isOpen, onCl
                                     ))}
                                 </div>
                             </div>
+
+                            {(analysis.alternative_approach || analysis.pattern_detected) && (
+                                <div className="grid gap-4 md:grid-cols-2">
+                                    {analysis.alternative_approach && (
+                                        <div className="rounded-2xl border border-white/5 bg-white/[0.03] p-4">
+                                            <h4 className="text-sm font-bold text-white mb-1">Alternative Approach</h4>
+                                            <p className="text-sm text-muted-foreground leading-relaxed">{analysis.alternative_approach}</p>
+                                        </div>
+                                    )}
+                                    {analysis.pattern_detected && (
+                                        <div className="rounded-2xl border border-white/5 bg-white/[0.03] p-4">
+                                            <h4 className="text-sm font-bold text-white mb-1">Pattern Detected</h4>
+                                            <p className="text-sm text-muted-foreground leading-relaxed">{analysis.pattern_detected}</p>
+                                        </div>
+                                    )}
+                                </div>
+                            )}
                         </div>
                     ) : (
                         <div className="py-12 text-center text-muted-foreground">Failed to load analysis.</div>

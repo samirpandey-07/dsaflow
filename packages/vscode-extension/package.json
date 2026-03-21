@@ -1,95 +1,167 @@
 {
-    "name": "dsaflow",
-    "displayName": "DSAFlow",
-    "description": "The ultimate companion for competitive programmers to track, analyze, and master Data Structures & Algorithms with intelligent insights and spaced repetition.",
-    "version": "1.0.0",
-    "publisher": "dsaflow",
-    "icon": "dsaflow-icon.png",
-    "engines": {
-        "vscode": "^1.80.0"
-    },
-    "categories": [
-        "Education",
-        "Data Science",
-        "Other"
+  "name": "dsaflow",
+  "displayName": "DSAFlow",
+  "description": "Track DSA solves from VS Code, sync them to your dashboard, and keep revision notes without leaving the editor.",
+  "version": "1.0.0",
+  "publisher": "dsaflow",
+  "license": "MIT",
+  "icon": "dsaflow-icon.png",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/samirpandey-07/dsaflow.git"
+  },
+  "homepage": "https://github.com/samirpandey-07/dsaflow",
+  "bugs": {
+    "url": "https://github.com/samirpandey-07/dsaflow/issues"
+  },
+  "galleryBanner": {
+    "color": "#0c111b",
+    "theme": "dark"
+  },
+  "engines": {
+    "vscode": "^1.80.0"
+  },
+  "categories": [
+    "Education",
+    "Productivity",
+    "Other"
+  ],
+  "keywords": [
+    "dsa",
+    "leetcode",
+    "competitive-programming",
+    "algorithms",
+    "data-structures",
+    "interview-prep",
+    "revision"
+  ],
+  "activationEvents": [
+    "onStartupFinished"
+  ],
+  "main": "./out/extension.js",
+  "files": [
+    "out/**",
+    "README.md",
+    "CHANGELOG.md",
+    "LICENSE",
+    "package.json",
+    "dsaflow-icon.png"
+  ],
+  "contributes": {
+    "commands": [
+      {
+        "command": "dsaflow.startTracking",
+        "title": "Start Tracking",
+        "category": "DSAFlow"
+      },
+      {
+        "command": "dsaflow.stopTracking",
+        "title": "Stop Tracking",
+        "category": "DSAFlow"
+      },
+      {
+        "command": "dsaflow.openDashboard",
+        "title": "Open Dashboard",
+        "category": "DSAFlow"
+      },
+      {
+        "command": "dsaflow.addNote",
+        "title": "Add Note to Last Problem",
+        "category": "DSAFlow"
+      },
+      {
+        "command": "dsaflow.login",
+        "title": "Sign In",
+        "category": "DSAFlow"
+      },
+      {
+        "command": "dsaflow.logout",
+        "title": "Sign Out",
+        "category": "DSAFlow"
+      },
+      {
+        "command": "dsaflow.viewStats",
+        "title": "View Stats",
+        "category": "DSAFlow"
+      },
+      {
+        "command": "dsaflow.retryPendingSync",
+        "title": "Retry Pending Sync",
+        "category": "DSAFlow"
+      }
     ],
-    "keywords": [
-        "DSA",
-        "LeetCode",
-        "Competitve Programming",
-        "Algorithms",
-        "Data Structures",
-        "Interview Prep",
-        "AI"
-    ],
-    "activationEvents": [
-        "onStartupFinished"
-    ],
-    "main": "./out/extension.js",
-    "contributes": {
-        "commands": [
-            {
-                "command": "dsaflow.startTracking",
-                "title": "DSAFlow: Start Tracking"
-            },
-            {
-                "command": "dsaflow.stopTracking",
-                "title": "DSAFlow: Stop Tracking"
-            },
-            {
-                "command": "dsaflow.openDashboard",
-                "title": "DSAFlow: Open Dashboard"
-            },
-            {
-                "command": "dsaflow.addNote",
-                "title": "DSAFlow: Add Note to Last Problem"
-            },
-            {
-                "command": "dsaflow.login",
-                "title": "DSAFlow: Login (Store Token Securely)"
-            },
-            {
-                "command": "dsaflow.logout",
-                "title": "DSAFlow: Logout (Clear Token & Queue)"
-            },
-            {
-                "command": "dsaflow.viewStats",
-                "title": "DSAFlow: View Stats"
-            }
-        ],
-        "configuration": {
-            "title": "DSAFlow",
-            "properties": {
-                "dsaflow.apiUrl": {
-                    "type": "string",
-                    "default": "http://localhost:3001/api/problems",
-                    "description": "The URL of your DSAFlow backend API endpoint."
-                },
-                "dsaflow.dashboardUrl": {
-                    "type": "string",
-                    "default": "http://localhost:3000",
-                    "description": "URL of the DSAFlow dashboard (opened by Open Dashboard command)."
-                }
-            }
+    "configuration": {
+      "title": "DSAFlow",
+      "properties": {
+        "dsaflow.apiUrl": {
+          "type": "string",
+          "default": "http://localhost:3001/api/problems",
+          "description": "Full API endpoint used to log solves."
+        },
+        "dsaflow.dashboardUrl": {
+          "type": "string",
+          "default": "http://localhost:3000",
+          "description": "Dashboard URL opened by the Open Dashboard command."
+        },
+        "dsaflow.watchedGlob": {
+          "type": "string",
+          "default": "**/*.{cpp,py,java,js,ts}",
+          "description": "Glob pattern used by the extension watcher."
+        },
+        "dsaflow.autoLogOnCreate": {
+          "type": "boolean",
+          "default": true,
+          "description": "Automatically log newly created solution files."
+        },
+        "dsaflow.promptOnSave": {
+          "type": "boolean",
+          "default": true,
+          "description": "Prompt to log supported files when they are saved."
+        },
+        "dsaflow.promptForProblemUrl": {
+          "type": "boolean",
+          "default": true,
+          "description": "Ask for the original problem URL before sending a solve."
+        },
+        "dsaflow.defaultDifficulty": {
+          "type": "string",
+          "enum": [
+            "Easy",
+            "Medium",
+            "Hard"
+          ],
+          "default": "Medium",
+          "description": "Difficulty sent when DSAFlow cannot infer it from the source."
+        },
+        "dsaflow.savePromptDebounceMs": {
+          "type": "number",
+          "default": 1500,
+          "minimum": 250,
+          "description": "Debounce applied before showing the log-on-save prompt."
         }
-    },
-    "scripts": {
-        "vscode:prepublish": "npm run compile",
-        "compile": "tsc -p ./",
-        "watch": "tsc -watch -p ./",
-        "pretest": "npm run compile && npm run lint",
-        "lint": "eslint src --ext ts"
-    },
-    "devDependencies": {
-        "@types/node": "18.x",
-        "@types/vscode": "^1.80.0",
-        "@typescript-eslint/eslint-plugin": "^6.x",
-        "@typescript-eslint/parser": "^6.x",
-        "@vscode/vsce": "^3.7.1",
-        "eslint": "^8.x",
-        "typescript": "^5.x"
-    },
-    "dependencies": {
-        "axios": "^1.6.0"
+      }
     }
+  },
+  "scripts": {
+    "vscode:prepublish": "npm run compile",
+    "compile": "node ./esbuild.mjs",
+    "typecheck": "tsc --noEmit -p ./",
+    "watch": "node ./esbuild.mjs --watch",
+    "lint": "eslint src --ext .ts",
+    "check": "npm run typecheck && npm run compile && npm run lint",
+    "package": "vsce package --allow-missing-repository --no-dependencies"
+  },
+  "devDependencies": {
+    "@types/node": "18.x",
+    "@types/vscode": "^1.80.0",
+    "@typescript-eslint/eslint-plugin": "^6.x",
+    "@typescript-eslint/parser": "^6.x",
+    "@vscode/vsce": "^3.7.1",
+    "esbuild": "^0.27.4",
+    "eslint": "^8.x",
+    "typescript": "^5.x"
+  },
+  "dependencies": {
+    "axios": "^1.6.0"
+  }
 }

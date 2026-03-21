@@ -246,19 +246,36 @@ Open `http://localhost:3000`
 # ⚙ Configuration
 
 ### Backend (.env)
+Create `apps/api/.env` from `apps/api/.env.example` and fill in values.
+
 ```env
 SUPABASE_URL=your_url
 SUPABASE_ANON_KEY=your_key
+SUPABASE_SERVICE_ROLE_KEY=your_service_role_key
+
+# Optional
 GEMINI_API_KEY=your_key
+REDIS_URL=redis://localhost:6379
+RESEND_API_KEY=your_key
+FROM_EMAIL=onboarding@resend.dev
 PORT=3001
 ```
 
 ### Dashboard (.env.local)
+Create `apps/dashboard/.env.local` from `apps/dashboard/.env.local.example` and fill in values.
+
 ```env
 NEXT_PUBLIC_SUPABASE_URL=your_url
 NEXT_PUBLIC_SUPABASE_ANON_KEY=your_key
 NEXT_PUBLIC_API_URL=http://localhost:3001
 ```
+
+### Helpful scripts
+From the repo root you can run:
+- `npm run supabase:link` (link to a Supabase project)
+- `npm run supabase:push` (apply migrations to the linked project)
+- `npm run supabase:start` (start local Supabase dev stack)
+- `npm run supabase:stop` (stop local Supabase stack)
 
 ---
 

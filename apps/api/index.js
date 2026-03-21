@@ -3,17 +3,35 @@ const cors = require('cors');
 const morgan = require('morgan');
 require('dotenv').config();
 
-const apiRoutes = require('./src/routes/api');
+const apiRoutes = require('./src/routes');
 const swaggerJsDoc = require('swagger-jsdoc');
 const swaggerUi = require('swagger-ui-express');
 const helmet = require('helmet');
-const { initJobs } = require('./src/jobs/index');
-
 
 const app = express();
 const PORT = process.env.PORT || 3001;
+const isProd = process.env.NODE_ENV === 'production';
+const allowedOrigins = (process.env.ALLOWED_ORIGINS || '')
+    .split(',')
+    .map((origin) => origin.trim())
+    .filter(Boolean);
 
-// Swagger configuration
+function corsOrigin(origin, callback) {
+    if (!origin) {
+        return callback(null, true);
+    }
+
+    if (!isProd) {
+        return callback(null, true);
+    }
+
+    if (allowedOrigins.includes(origin)) {
+        return callback(null, true);
+    }
+
+    return callback(new Error('Origin not allowed by CORS'));
+}
+
 const swaggerOptions = {
     swaggerDefinition: {
         openapi: '3.0.0',
@@ -22,67 +40,54 @@ const swaggerOptions = {
             version: '1.0.0',
             description: 'API documentation for DSAFlow problem tracking and analytics',
             contact: { name: 'DSAFlow Dev' },
-            servers: [`http://localhost:${PORT}`]
+            servers: [process.env.API_BASE_URL || `http://localhost:${PORT}`],
         },
     },
-    apis: ['./src/routes/*.js'],
+    apis: ['./src/routes/*.routes.js'],
 };
 
 const swaggerDocs = swaggerJsDoc(swaggerOptions);
 app.use('/api-docs', swaggerUi.serve, swaggerUi.setup(swaggerDocs));
 
-// Rate limiting: relax in development/testing (max 1000/15min), strict in production (100/15min)
-const isProd = process.env.NODE_ENV === 'production';
 const limiter = require('express-rate-limit')({
     windowMs: 15 * 60 * 1000,
     max: isProd ? 100 : 1000,
-    message: { status: 'error', message: 'Too many requests from this IP, please try again after 15 minutes' }
+    message: { status: 'error', message: 'Too many requests from this IP, please try again after 15 minutes' },
 });
 
-app.use(helmet()); // Security headers
+app.use(helmet());
 app.use(cors({
-    origin: process.env.ALLOWED_ORIGINS ? process.env.ALLOWED_ORIGINS.split(',') : '*',
-    methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
-    allowedHeaders: ['Content-Type', 'Authorization']
+    origin: corsOrigin,
+    methods: ['GET', 'POST', 'PATCH', 'PUT', 'DELETE', 'OPTIONS'],
+    allowedHeaders: ['Content-Type', 'Authorization'],
 }));
 app.use(morgan('dev'));
 app.use(express.json());
 app.use('/api', limiter);
 
-// Health check endpoint for production monitoring
-app.get('/healthz', (req, res) => {
-    res.json({
-        status: 'ok',
-        timestamp: new Date().toISOString(),
-        uptime: process.uptime(),
-        version: process.env.npm_package_version || '1.0.0'
-    });
-});
+// Health check routes moved to src/routes/index.js under /api
 
 app.use('/api', apiRoutes);
 
-app.get('/', (req, res) => {
+app.get('/', (_req, res) => {
     res.send('Welcome to the DSAFlow API! Everything is running smoothly.');
 });
 
-app.get('/health', (req, res) => {
-    res.json({ status: 'ok' });
-});
+// Handled by /api router
 
-// Global JSON error handler
-app.use((err, req, res, next) => {
+app.use((err, _req, res, _next) => {
     console.error(`[Error] ${err.stack}`);
     res.status(err.status || 500).json({
         status: 'error',
         message: process.env.NODE_ENV === 'production'
             ? 'Internal Server Error'
-            : err.message
+            : err.message,
     });
 });
 
 app.listen(PORT, () => {
     console.log(`Backend API running on port ${PORT}`);
-    // Start background jobs (only if REDIS_URL is configured)
-    initJobs();
+    if (isProd && allowedOrigins.length === 0) {
+        console.warn('[CORS] ALLOWED_ORIGINS is empty in production; browser clients will be blocked until it is configured.');
+    }
 });
-

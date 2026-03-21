@@ -26,9 +26,8 @@ jobs:
     - name: Install dependencies
       run: npm install
 
-    - name: Build API
-      run: npm run build --workspace=apps/api
-      continue-on-error: true # Allow if build script not present yet
+    - name: Check VS Code extension
+      run: npm run check --workspace=packages/vscode-extension
 
     - name: Build Dashboard
       run: npm run build --workspace=apps/dashboard

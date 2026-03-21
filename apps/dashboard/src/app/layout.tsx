@@ -1,31 +1,32 @@
 import type { Metadata } from "next";
-import { Geist, Geist_Mono } from "next/font/google";
+import { Inter, Outfit } from "next/font/google";
 import "./globals.css";
 import SWBypass from "../components/SWBypass";
 
-const geistSans = Geist({
-  variable: "--font-geist-sans",
+const inter = Inter({
+  variable: "--font-inter",
   subsets: ["latin"],
 });
 
-const geistMono = Geist_Mono({
-  variable: "--font-geist-mono",
+const outfit = Outfit({
+  variable: "--font-outfit",
   subsets: ["latin"],
 });
 
 export const metadata: Metadata = {
-  title: "DSAFlow | Master Your Data Structures & Algorithms",
+  metadataBase: new URL(process.env.NEXT_PUBLIC_SITE_URL || "http://localhost:3000"),
+  title: "DSAFlow | Master Data Structures & Algorithms",
   description: "Track your DSA progress, manage revision cycles with spaced repetition, and get intelligent insights for your code. The ultimate companion for competitive programmers.",
   keywords: ["DSA", "Data Structures", "Algorithms", "Competitive Programming", "LeetCode Tracker", "Spaced Repetition", "Coding Interview Prep"],
   authors: [{ name: "Samir Pandey" }],
   openGraph: {
-    title: "DSAFlow | Master Your Data Structures & Algorithms",
+    title: "DSAFlow | Master Data Structures & Algorithms",
     description: "The ultimate companion for competitive programmers to track and revise problems efficiently.",
     url: "https://github.com/samirpandey-07/dsaflow",
     siteName: "DSAFlow",
     images: [
       {
-        url: "/og-image.png", // User would need to add this asset later
+        url: "/og-image.png",
         width: 1200,
         height: 630,
       },
@@ -40,7 +41,6 @@ export const metadata: Metadata = {
   },
 };
 
-
 import Providers from "./providers";
 
 export default function RootLayout({
@@ -49,9 +49,9 @@ export default function RootLayout({
   children: React.ReactNode;
 }>) {
   return (
-    <html lang="en">
+    <html lang="en" className="dark" suppressHydrationWarning>
       <body
-        className={`${geistSans.variable} ${geistMono.variable} antialiased`}
+        className={`${inter.variable} ${outfit.variable} font-inter antialiased bg-background text-foreground`}
       >
         <SWBypass />
         <Providers>

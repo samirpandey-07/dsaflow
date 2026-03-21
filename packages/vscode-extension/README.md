@@ -1,46 +1,77 @@
-# DSAFlow for Visual Studio Code 🚀
+# DSAFlow for VS Code
 
-**Master Your Data Structures & Algorithms with AI-Powered Insights and Spaced Repetition.**
+DSAFlow helps you track DSA solves directly from VS Code. It watches your solution files, sends solve metadata to your DSAFlow backend, and keeps your progress visible without switching tools.
 
-DSAFlow is the ultimate companion for competitive programmers. It automatically tracks your solved problems, provides AI-powered code analysis, and helps you internalize concepts using a scientifically-backed Spaced Repetition System (SRS).
+## What it does
 
-## Key Features
+- Logs supported solution files when they are created
+- Optionally prompts you to log saves for existing files
+- Stores your auth token securely in VS Code SecretStorage
+- Queues failed API requests and retries them later
+- Opens your dashboard and quick stats from the Command Palette
+- Lets you attach notes to the last logged problem
 
-- 🕵️ **Automatic Detection**: Automatically detects when you're working on a DSA problem from LeetCode, GeeksforGeeks, and more.
-- 📊 **Unified Dashboard**: View your progress, solve velocity, and topic mastery in a beautiful web dashboard.
-- 🤖 **AI Code Analysis**: Get instant feedback on your time/space complexity and optimization tips (powered by Gemini AI).
-- 🔥 **Streak & Growth**: Keep your momentum alive with streak tracking and detailed activity heatmaps.
-- ⏰ **Smart Revisions**: Never forget a concept again. Our Spaced Repetition system tells you exactly when to revise.
-- 🔒 **Secure & Private**: Your data is yours. Secure token storage using VS Code's native SecretStorage.
+## Supported file types
 
-## Getting Started
+- `.cpp`
+- `.py`
+- `.java`
+- `.js`
+- `.ts`
 
-1. **Install the Extension**: Install DSAFlow from the VS Code Marketplace.
-2. **Setup your Dashboard**: Visit the [DSAFlow Dashboard](http://localhost:3000) (if running locally) and sign up.
-3. **Login in VS Code**:
-   - Open the Command Palette (`Ctrl+Shift+P` / `Cmd+Shift+P`).
-   - Run `DSAFlow: Login`.
-   - Enter your secure access token from your Dashboard settings.
-4. **Start Solving**: Simply create or open a file (e.g., `two-sum.py`) and include the problem URL in a comment. DSAFlow will do the rest!
+## Getting started
 
-## Extension Commands
+1. Install the extension.
+2. Open your DSAFlow dashboard and sign in.
+3. Run `DSAFlow: Sign In` from the Command Palette.
+4. Configure the extension if your API or dashboard is not running on localhost.
+5. Create or save a supported file like `Arrays/two_sum.cpp`.
+6. DSAFlow logs the solve and offers to attach a note.
 
-- `DSAFlow: Login` - Securely store your access token.
-- `DSAFlow: View Stats` - View your breakdown of solved problems right inside VS Code.
-- `DSAFlow: Open Dashboard` - Jump straight to your detailed web analytics.
-- `DSAFlow: Add Note to Last Problem` - Quickly jot down thoughts on the problem you just solved.
-- `DSAFlow: Start Tracking` / `Stop Tracking` - Manually control the file watcher.
+## Commands
+
+- `DSAFlow: Sign In`
+- `DSAFlow: Sign Out`
+- `DSAFlow: Start Tracking`
+- `DSAFlow: Stop Tracking`
+- `DSAFlow: Open Dashboard`
+- `DSAFlow: View Stats`
+- `DSAFlow: Add Note to Last Problem`
+- `DSAFlow: Retry Pending Sync`
 
 ## Settings
 
-Customize the extension via your `settings.json`:
+- `dsaflow.apiUrl`: Full API endpoint used to log solves.
+- `dsaflow.dashboardUrl`: Dashboard URL opened by the extension.
+- `dsaflow.watchedGlob`: Glob used by the file watcher.
+- `dsaflow.autoLogOnCreate`: Automatically log new solution files.
+- `dsaflow.promptOnSave`: Prompt before logging supported file saves.
+- `dsaflow.promptForProblemUrl`: Ask for the source problem URL before logging.
+- `dsaflow.defaultDifficulty`: Difficulty sent when the extension cannot infer one.
+- `dsaflow.savePromptDebounceMs`: Debounce before the save prompt appears.
 
-- `dsaflow.apiUrl`: The URL of your DSAFlow backend API.
-- `dsaflow.dashboardUrl`: The URL of your DSAFlow dashboard.
+## Local development
 
-## Contributing
+```bash
+npm install
+npm run compile --workspace=packages/vscode-extension
+```
 
-We love contributions! Check out our [GitHub repository](https://github.com/dsaflow/dsaflow) to get started.
+To package the extension locally:
 
----
-**Built with ❤️ for the competitive programming community.**
+```bash
+npm run package --workspace=packages/vscode-extension
+```
+
+## Publishing checklist
+
+- Create or confirm your VS Code Marketplace publisher ID
+- Update the `publisher` field in `package.json` if needed
+- Confirm the production API and dashboard URLs
+- Run `npm run check --workspace=packages/vscode-extension`
+- Run `npm run package --workspace=packages/vscode-extension`
+- Publish with `npx vsce publish`
+
+## Repository
+
+[GitHub repository](https://github.com/samirpandey-07/dsaflow)

@@ -2,7 +2,7 @@
 
 import React, { useEffect, useState } from 'react';
 import { X, MessageSquare, Plus } from 'lucide-react';
-import { getAuthToken } from '../lib/auth';
+import { apiFetch } from '../lib/api';
 
 interface Note {
     id: string;
@@ -17,8 +17,6 @@ interface NoteModalProps {
     onClose: () => void;
 }
 
-const API_BASE = 'http://localhost:3001/api';
-
 export default function NoteModal({ problemId, problemName, isOpen, onClose }: NoteModalProps) {
     const [notes, setNotes] = useState<Note[]>([]);
     const [newNote, setNewNote] = useState('');
@@ -32,12 +30,8 @@ export default function NoteModal({ problemId, problemName, isOpen, onClose }: N
     const fetchNotes = async () => {
         setLoading(true);
         try {
-            const token = await getAuthToken();
-            if (!token) return;
-            const res = await fetch(`${API_BASE}/problems/${problemId}/notes`, {
-                headers: { 'Authorization': `Bearer ${token}` }
-            });
-            if (res.ok) setNotes(await res.json());
+            const data = await apiFetch<Note[]>(`/problems/${problemId}/notes`);
+            setNotes(data);
         } catch (e) {
             console.error('Failed to fetch notes:', e);
         } finally {
@@ -49,17 +43,12 @@ export default function NoteModal({ problemId, problemName, isOpen, onClose }: N
         if (!newNote.trim()) return;
         setSaving(true);
         try {
-            const token = await getAuthToken();
-            if (!token) return;
-            const res = await fetch(`${API_BASE}/notes`, {
+            await apiFetch('/notes', {
                 method: 'POST',
-                headers: { 'Authorization': `Bearer ${token}`, 'Content-Type': 'application/json' },
-                body: JSON.stringify({ problem_id: problemId, note: newNote.trim() })
+                body: JSON.stringify({ problem_id: problemId, note: newNote.trim() }),
             });
-            if (res.ok) {
-                setNewNote('');
-                await fetchNotes();
-            }
+            setNewNote('');
+            await fetchNotes();
         } catch (e) {
             console.error('Failed to save note:', e);
         } finally {

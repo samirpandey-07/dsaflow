@@ -1,411 +1,464 @@
-"use client";
+'use client';
 
-import React, { useEffect, useState, useCallback, useMemo } from 'react';
+import React, { useEffect, useMemo, useState } from 'react';
 import dynamic from 'next/dynamic';
 import { useRouter } from 'next/navigation';
-import { useQuery, useInfiniteQuery, useQueryClient } from '@tanstack/react-query';
-import StatsCards from '../components/StatsCards';
-import { supabase } from '../lib/supabase';
+import { useQuery, useQueryClient } from '@tanstack/react-query';
 import type { User } from '@supabase/supabase-js';
+import { motion, AnimatePresence, Variants } from 'framer-motion';
+import {
+    Activity,
+    ArrowUpRight,
+    CalendarRange,
+    Flame,
+    RefreshCcw,
+    ShieldCheck,
+    Sparkles,
+    Target,
+    Settings as SettingsIcon,
+} from 'lucide-react';
 import ProfileModal from '../components/ProfileModal';
-import { getAuthToken } from '../lib/auth';
+import PlatformBreakdown from '../components/PlatformBreakdown';
+import InsightsPanel from '../components/InsightsPanel';
+import AchievementsGrid from '../components/AchievementsGrid';
+import { supabase } from '../lib/supabase';
+import { apiFetch } from '../lib/api';
 
-// Dynamic imports with ssr:false — permanently prevents hydration errors
 const TopicMasteryChart = dynamic(() => import('../components/TopicMasteryChart'), { ssr: false });
 const DifficultyPieChart = dynamic(() => import('../components/DifficultyPieChart'), { ssr: false });
 const ActivityHeatmap = dynamic(() => import('../components/ActivityHeatmap'), { ssr: false });
 const ProblemsList = dynamic(() => import('../components/ProblemsList'), { ssr: false });
 const RevisionQueue = dynamic(() => import('../components/RevisionQueue'), { ssr: false });
 
-const API_BASE = (process.env.NEXT_PUBLIC_API_URL || 'http://localhost:3001') + '/api';
-
-// ... (skipping interface definition for brevity, it's untouched) 
-interface Problem {
-  id: string;
-  problem_name: string;
-  topic: string;
-  difficulty: string;
-  language: string;
-  platform: string;
-  problem_url: string | null;
-  code_snippet: string | null;
-  solved_at: string;
+interface ProblemLite {
+    id: string;
+    problem_name: string;
+    topic: string;
+    solved_at: string;
 }
 
-export default function Dashboard() {
-  const router = useRouter();
-  const queryClient = useQueryClient();
-
-  // --- Auth State ---
-  const [user, setUser] = useState<User | null>(null);
-  const [authLoading, setAuthLoading] = useState(true);
-  const [isProfileOpen, setIsProfileOpen] = useState(false);
-  const [mounted, setMounted] = useState(false);
-
-  // Custom fetcher for React Query
-  const fetchApi = async (endpoint: string) => {
-    const token = await getAuthToken();
-    if (!token) throw new Error('No auth token');
-    const res = await fetch(`${API_BASE}${endpoint}`, {
-      headers: { 'Authorization': `Bearer ${token}` }
-    });
-    if (!res.ok) throw new Error(`Fetch failed for ${endpoint}`);
-    return res.json();
-  };
-
-  // React Query Hooks (Enabled only when user exists)
-  const { data: qStats, isLoading: loadStats } = useQuery({
-    queryKey: ['stats', user?.id],
-    queryFn: () => fetchApi('/stats'),
-    enabled: !!user
-  });
-
-  const {
-    data: qProblems,
-    isLoading: loadProblems,
-    fetchNextPage,
-    hasNextPage,
-    isFetchingNextPage
-  } = useInfiniteQuery({
-    queryKey: ['problems', user?.id],
-    queryFn: async ({ pageParam }) => {
-      const url = pageParam ? `/problems?cursor=${pageParam}&limit=20` : `/problems?limit=20`;
-      return fetchApi(url);
+const containerVars: Variants = {
+    hidden: { opacity: 0 },
+    visible: {
+        opacity: 1,
+        transition: {
+            staggerChildren: 0.1,
+        },
     },
-    initialPageParam: '' as string | null,
-    getNextPageParam: (lastPage) => lastPage.has_next_page ? lastPage.next_cursor : undefined,
-    enabled: !!user
-  });
+};
 
-  const { data: qUserStats, isLoading: loadUserStats } = useQuery({
-    queryKey: ['userStats', user?.id],
-    queryFn: () => fetchApi('/user/stats'),
-    enabled: !!user
-  });
+const itemVars: Variants = {
+    hidden: { opacity: 0, y: 20 },
+    visible: { 
+        opacity: 1, 
+        y: 0, 
+        transition: { 
+            duration: 0.5, 
+            ease: [0.22, 1, 0.36, 1] 
+        } 
+    },
+};
 
-  const { data: qVelocity, isLoading: loadVelocity } = useQuery({
-    queryKey: ['velocity', user?.id],
-    queryFn: () => fetchApi('/analytics/velocity'),
-    enabled: !!user
-  });
+export default function Dashboard() {
+    const router = useRouter();
+    const queryClient = useQueryClient();
 
-  // Provide fallback defaults for UI
-  const stats = qStats || { solved: 0, easy: 0, medium: 0, hard: 0 };
-  const userStats = qUserStats || { current_streak: 0, longest_streak: 0 };
-  const velocity = qVelocity || { solves_last_7_days: 0, daily_velocity: 0 };
+    const [user, setUser] = useState<User | null>(null);
+    const [authLoading, setAuthLoading] = useState(true);
+    const [mounted, setMounted] = useState(false);
+    const [isProfileOpen, setIsProfileOpen] = useState(false);
 
-  // Flatten infinite query pages into a single array safely across Hydration
-  const [problems, setProblems] = useState<Problem[]>([]);
+    useEffect(() => {
+        setMounted(true);
 
-  useEffect(() => {
-    if (qProblems?.pages) {
-      const flattened = qProblems.pages.flatMap(page => page.data || []);
-      setProblems(flattened);
-    }
-  }, [qProblems]);
+        supabase.auth.getSession().then(({ data: { session } }) => {
+            if (!session) {
+                router.replace('/login');
+            } else {
+                setUser(session.user);
+            }
+            setAuthLoading(false);
+        });
 
-  const loading = loadStats || loadProblems || loadUserStats || loadVelocity;
-  const connectionStatus = loading ? 'connecting' : (user ? 'online' : 'offline');
+        const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, session) => {
+            if (!session) {
+                router.replace('/login');
+            } else {
+                setUser(session.user);
+            }
+        });
 
-  // ────────────────────────────────────────────────
-  // 1. AUTH GUARD
-  // ────────────────────────────────────────────────
-  const refreshUser = async () => {
-    const { data: { session } } = await supabase.auth.getSession();
-    if (session) setUser(session.user);
-  };
+        return () => subscription.unsubscribe();
+    }, [router]);
 
-  useEffect(() => {
-    setMounted(true);
+    useEffect(() => {
+        if (!user) return;
 
-    supabase.auth.getSession().then(({ data: { session } }) => {
-      if (!session) {
-        router.replace('/login');
-      } else {
-        setUser(session.user);
-        // FORCE REFRESH: Because we just fixed a backend RLS bug,
-        // React Query might be aggressively caching the old empty [] arrays.
-        // This ensures it actually reaches out to the API on load.
-        queryClient.invalidateQueries({ queryKey: ['problems', session.user.id] });
-        queryClient.invalidateQueries({ queryKey: ['stats', session.user.id] });
-        queryClient.invalidateQueries({ queryKey: ['userStats', session.user.id] });
-        queryClient.invalidateQueries({ queryKey: ['velocity', session.user.id] });
-      }
-      setAuthLoading(false);
+        const invalidateKeys = (keys: string[]) => Promise.all(
+            keys.map((key) => queryClient.invalidateQueries({ queryKey: [key] })),
+        );
+
+        const channel = supabase
+            .channel('dashboard-sync')
+            .on('postgres_changes', { event: '*', schema: 'public', table: 'problems' }, (payload) => {
+                const oldRow = (payload.old ?? {}) as Record<string, unknown>;
+                const newRow = (payload.new ?? {}) as Record<string, unknown>;
+                const changedSolveShape = payload.eventType !== 'UPDATE'
+                    || oldRow.solved_at !== newRow.solved_at
+                    || oldRow.topic !== newRow.topic
+                    || oldRow.platform !== newRow.platform
+                    || oldRow.difficulty !== newRow.difficulty;
+                const changedRevisionShape = payload.eventType !== 'UPDATE'
+                    || oldRow.next_revision_at !== newRow.next_revision_at
+                    || oldRow.revision_count !== newRow.revision_count;
+
+                const keys = ['problems-table'];
+                if (changedSolveShape) {
+                    keys.push('overview', 'activity', 'topics', 'platforms', 'achievements', 'insights', 'problem-lite');
+                }
+                if (changedRevisionShape) {
+                    keys.push('overview', 'revisions');
+                }
+
+                void invalidateKeys([...new Set(keys)]);
+            })
+            .subscribe();
+
+        return () => {
+            supabase.removeChannel(channel);
+        };
+    }, [queryClient, user]);
+
+    const overviewQuery = useQuery({
+        queryKey: ['overview', user?.id],
+        enabled: !!user,
+        queryFn: () => apiFetch<{
+            total_solved: number;
+            solved_today: number;
+            weekly_progress: number;
+            monthly_progress: number;
+            easy: number;
+            medium: number;
+            hard: number;
+            revision_due: number;
+            current_streak: number;
+            longest_streak: number;
+        }>('/analytics/overview'),
     });
 
-    // React to sign-in / sign-out events
-    const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, session) => {
-      if (!session) {
-        router.replace('/login');
-      } else {
-        setUser(session.user);
-      }
+    const activityQuery = useQuery({
+        queryKey: ['activity', user?.id],
+        enabled: !!user,
+        queryFn: () => apiFetch<{ date: string; count: number }[]>('/analytics/activity?days=84'),
     });
 
-    return () => subscription.unsubscribe();
-  }, [router, queryClient]);
+    const topicsQuery = useQuery({
+        queryKey: ['topics', user?.id],
+        enabled: !!user,
+        queryFn: () => apiFetch<any[]>('/analytics/topics'),
+    });
 
-  // ────────────────────────────────────────────────
-  // 2. REALTIME SUBSCRIPTIONS
-  // ────────────────────────────────────────────────
-  useEffect(() => {
-    if (!user) return;
+    const platformsQuery = useQuery({
+        queryKey: ['platforms', user?.id],
+        enabled: !!user,
+        queryFn: () => apiFetch<{ platform: string; count: number }[]>('/analytics/platforms'),
+    });
 
-    // React Query handles initial fetch. We just bind subscriptions here to invalidate caches.
-    const channel = supabase
-      .channel('dashboard-sync')
-      .on('postgres_changes', { event: '*', schema: 'public', table: 'problems' }, () => {
-        queryClient.invalidateQueries({ queryKey: ['problems', user.id] });
-        queryClient.invalidateQueries({ queryKey: ['stats', user.id] });
-        queryClient.invalidateQueries({ queryKey: ['velocity', user.id] });
-      })
-      .on('postgres_changes', { event: '*', schema: 'public', table: 'user_stats' }, () => {
-        queryClient.invalidateQueries({ queryKey: ['userStats', user.id] });
-      })
-      .subscribe();
+    const revisionsQuery = useQuery({
+        queryKey: ['revisions', user?.id],
+        enabled: !!user,
+        queryFn: () => apiFetch<any>('/revision-queue'),
+    });
 
-    return () => {
-      supabase.removeChannel(channel);
+    const achievementsQuery = useQuery({
+        queryKey: ['achievements', user?.id],
+        enabled: !!user,
+        queryFn: () => apiFetch<any[]>('/achievements'),
+    });
+
+    const insightsQuery = useQuery({
+        queryKey: ['insights', user?.id],
+        enabled: !!user,
+        queryFn: () => apiFetch<any>('/analytics/insights'),
+    });
+
+    const problemLiteQuery = useQuery({
+        queryKey: ['problem-lite', user?.id],
+        enabled: !!user,
+        queryFn: async () => {
+            const response = await apiFetch<{ items: ProblemLite[] }>('/problems?limit=200&sort_by=solved_at&sort_order=desc');
+            return response.items;
+        },
+    });
+
+    const difficultyStats = useMemo(() => ({
+        easy: overviewQuery.data?.easy || 0,
+        medium: overviewQuery.data?.medium || 0,
+        hard: overviewQuery.data?.hard || 0,
+    }), [overviewQuery.data]);
+
+    const heroCards = [
+        {
+            title: 'Solved today',
+            value: overviewQuery.data?.solved_today || 0,
+            copy: 'Files logged from practice flow.',
+            icon: <Sparkles className="h-5 w-5 text-emerald-400" />,
+            tone: 'from-emerald-500/20 via-emerald-500/5 to-transparent border-emerald-500/20 shadow-emerald-500/10',
+        },
+        {
+            title: 'Weekly progress',
+            value: overviewQuery.data?.weekly_progress || 0,
+            copy: 'Solved in the last 7 days.',
+            icon: <CalendarRange className="h-5 w-5 text-sky-400" />,
+            tone: 'from-sky-500/20 via-sky-500/5 to-transparent border-sky-500/20 shadow-sky-500/10',
+        },
+        {
+            title: 'Revision pressure',
+            value: overviewQuery.data?.revision_due || 0,
+            copy: 'Problems due for spaced repetition.',
+            icon: <Target className="h-5 w-5 text-amber-400" />,
+            tone: 'from-amber-500/20 via-amber-500/5 to-transparent border-amber-500/20 shadow-amber-500/10',
+        },
+        {
+            title: 'Current streak',
+            value: overviewQuery.data?.current_streak || 0,
+            copy: `Longest streak: ${overviewQuery.data?.longest_streak || 0} days`,
+            icon: <Flame className="h-5 w-5 text-rose-400" />,
+            tone: 'from-rose-500/20 via-rose-500/5 to-transparent border-rose-500/20 shadow-rose-500/10',
+        },
+    ];
+
+    const healthQuery = useQuery({
+        queryKey: ['health'],
+        queryFn: () => apiFetch<{ status: string }>('/health'),
+        refetchInterval: 10000, // Check every 10 seconds
+    });
+
+    const connectionStatus = authLoading
+        ? 'syncing'
+        : healthQuery.data?.status === 'ok'
+            ? 'Healthy'
+            : 'Unstable';
+
+    const refreshAll = async () => {
+        await Promise.all([
+            queryClient.invalidateQueries({ queryKey: ['overview'] }),
+            queryClient.invalidateQueries({ queryKey: ['activity'] }),
+            queryClient.invalidateQueries({ queryKey: ['topics'] }),
+            queryClient.invalidateQueries({ queryKey: ['platforms'] }),
+            queryClient.invalidateQueries({ queryKey: ['revisions'] }),
+            queryClient.invalidateQueries({ queryKey: ['achievements'] }),
+            queryClient.invalidateQueries({ queryKey: ['insights'] }),
+            queryClient.invalidateQueries({ queryKey: ['problem-lite'] }),
+            queryClient.invalidateQueries({ queryKey: ['problems-table'] }),
+            queryClient.invalidateQueries({ queryKey: ['health'] }),
+        ]);
     };
-  }, [user, queryClient]);
+// ... (later in the JSX)
+                            {[
+                                { label: 'Total Solves', value: overviewQuery.data?.total_solved || 0, sub: 'All-time practice volume' },
+                                { label: 'Monthly Output', value: overviewQuery.data?.monthly_progress || 0, sub: 'Activity last 30 days' },
+                                { label: 'System Status', value: connectionStatus, sub: healthQuery.isError ? 'API Connection Lost' : 'Realtime data pipeline', icon: ShieldCheck, color: connectionStatus === 'Healthy' ? 'text-emerald-400' : 'text-rose-400' },
+                            ].map((stat, i) => (
+                                <div key={i} className="group relative rounded-3xl border border-white/5 bg-white/[0.02] p-6 transition-all hover:bg-white/[0.04]">
+                                    <p className="font-outfit text-[10px] font-bold uppercase tracking-[0.2em] text-white/40">{stat.label}</p>
+                                    <div className="mt-3 flex items-end justify-between">
+                                        <p className={`text-4xl font-black text-white ${stat.label === 'System Status' ? 'text-2xl capitalize' : ''}`}>
+                                            {stat.value}
+                                        </p>
+                                        {stat.icon && <stat.icon className={`mb-1 h-5 w-5 ${stat.color || 'text-emerald-400'}`} />}
+                                    </div>
+                                    <p className="mt-2 text-xs font-medium text-white/30">{stat.sub}</p>
+                                </div>
+                            ))}
 
-  // --- Derived Stats (Solved Today) ---
-  const solvedToday = problems.filter(p => {
-    const solvedDate = new Date(p.solved_at).toLocaleDateString();
-    const today = new Date().toLocaleDateString();
-    return solvedDate === today;
-  }).length;
+    if (!mounted || authLoading) {
+        return (
+            <div className="flex min-h-screen items-center justify-center bg-[#03080c]">
+                <div className="flex flex-col items-center gap-6">
+                    <motion.div
+                        initial={{ opacity: 0, scale: 0.8 }}
+                        animate={{ opacity: 1, scale: 1 }}
+                        transition={{ duration: 0.5, repeat: Infinity, repeatType: 'reverse' }}
+                        className="h-12 w-12 rounded-full border-4 border-sky-500/20 border-t-sky-500"
+                    />
+                    <p className="font-outfit text-lg font-medium tracking-wide text-white/50">Initializing DSAFlow...</p>
+                </div>
+            </div>
+        );
+    }
 
-  // ────────────────────────────────────────────────
-  // 3. LOGOUT
-  // ────────────────────────────────────────────────
-  const handleLogout = async () => {
-    await supabase.auth.signOut();
-    router.replace('/login');
-  };
+    if (!user) {
+        return null;
+    }
 
-  // ────────────────────────────────────────────────
-  // 4. RENDER GUARDS
-  // ────────────────────────────────────────────────
-  if (!mounted || authLoading) {
     return (
-      <div className="min-h-screen bg-[#0a0a0b] flex items-center justify-center">
-        <div className="flex flex-col items-center gap-4">
-          <div className="w-8 h-8 border-2 border-primary/40 border-t-primary rounded-full animate-spin" />
-          <p className="text-white/30 text-sm font-medium">Authenticating...</p>
+        <div className="min-h-screen bg-[#03080c] selection:bg-sky-500/30">
+            {/* Ambient Background */}
+            <div className="pointer-events-none fixed inset-0 overflow-hidden">
+                <div className="absolute -top-[10%] -left-[10%] h-[40%] w-[40%] rounded-full bg-sky-500/10 blur-[120px]" />
+                <div className="absolute top-[20%] -right-[10%] h-[35%] w-[35%] rounded-full bg-indigo-500/5 blur-[100px]" />
+                <div className="absolute -bottom-[10%] left-[20%] h-[30%] w-[30%] rounded-full bg-rose-500/5 blur-[100px]" />
+            </div>
+
+            <motion.div
+                initial="hidden"
+                animate="visible"
+                variants={containerVars}
+                className="relative mx-auto max-w-[1500px] px-6 py-10 md:px-10 xl:px-14"
+            >
+                <motion.header variants={itemVars} className="mb-10 grid gap-8 xl:grid-cols-[1.4fr_0.8fr]">
+                    <div className="relative overflow-hidden rounded-[38px] border border-white/10 bg-white/[0.03] p-10 backdrop-blur-3xl shadow-2xl">
+                        <div className="absolute top-0 right-0 p-8 opacity-20">
+                            <Sparkles className="h-32 w-32 text-sky-400" />
+                        </div>
+
+                        <div className="relative flex flex-wrap items-start justify-between gap-6">
+                            <div className="max-w-2xl">
+                                <p className="font-outfit text-xs font-bold uppercase tracking-[0.4em] text-sky-400/90">Command Center</p>
+                                <h1 className="mt-4 font-outfit text-4xl font-black tracking-tight text-white md:text-5xl lg:text-6xl leading-[1.1]">
+                                    Master your <span className="bg-gradient-to-r from-sky-400 to-indigo-400 bg-clip-text text-transparent">momentum.</span>
+                                </h1>
+                                <p className="mt-6 text-lg leading-relaxed text-white/50 font-medium">
+                                    Your IDE tracks the work. DSAFlow turns it into mastery signals, spaced repetition cycles, and intelligent pattern insights.
+                                </p>
+                            </div>
+
+                            <div className="flex items-center gap-3">
+                                <motion.button
+                                    whileHover={{ scale: 1.05 }}
+                                    whileTap={{ scale: 0.95 }}
+                                    onClick={() => setIsProfileOpen(true)}
+                                    className="flex h-12 w-12 items-center justify-center rounded-2xl border border-white/10 bg-white/5 text-sm font-bold text-white backdrop-blur-xl transition-colors hover:bg-white/10"
+                                >
+                                    {(user.user_metadata?.full_name?.[0] || user.email?.[0] || 'U').toUpperCase()}
+                                </motion.button>
+                                <motion.button
+                                    whileHover={{ scale: 1.02 }}
+                                    whileTap={{ scale: 0.98 }}
+                                    onClick={() => void refreshAll()}
+                                    className="flex items-center gap-2 rounded-2xl border border-white/10 bg-white/5 px-5 py-3 text-sm font-bold text-white/80 backdrop-blur-xl transition-all hover:bg-white/10 hover:text-white"
+                                >
+                                    <RefreshCcw className="h-4 w-4" />
+                                    <span>Sync</span>
+                                </motion.button>
+                                <motion.button
+                                    whileHover={{ scale: 1.02 }}
+                                    whileTap={{ scale: 0.98 }}
+                                    onClick={() => router.push('/settings')}
+                                    className="flex items-center gap-2 rounded-2xl border border-white/10 bg-white/5 px-5 py-3 text-sm font-bold text-white/80 backdrop-blur-xl transition-all hover:bg-white/10 hover:text-white"
+                                >
+                                    <SettingsIcon className="h-4 w-4" />
+                                </motion.button>
+                            </div>
+                        </div>
+
+                        <div className="mt-12 grid gap-6 md:grid-cols-3">
+                            {[
+                                { label: 'Total Solves', value: overviewQuery.data?.total_solved || 0, sub: 'All-time practice volume' },
+                                { label: 'Monthly Output', value: overviewQuery.data?.monthly_progress || 0, sub: 'Activity last 30 days' },
+                                { label: 'System Status', value: connectionStatus, sub: healthQuery.isError ? 'API Connection Lost' : 'Realtime data pipeline', icon: ShieldCheck, color: connectionStatus === 'Healthy' ? 'text-emerald-400' : 'text-rose-400' },
+                            ].map((stat, i) => (
+                                <div key={i} className="group relative rounded-3xl border border-white/5 bg-white/[0.02] p-6 transition-all hover:bg-white/[0.04]">
+                                    <p className="font-outfit text-[10px] font-bold uppercase tracking-[0.2em] text-white/40">{stat.label}</p>
+                                    <div className="mt-3 flex items-end justify-between">
+                                        <p className={`text-4xl font-black text-white ${stat.label === 'System Status' ? 'text-2xl capitalize' : ''}`}>
+                                            {stat.value}
+                                        </p>
+                                        {stat.icon && <stat.icon className={`mb-1 h-5 w-5 ${stat.color || 'text-emerald-400'}`} />}
+                                    </div>
+                                    <p className="mt-2 text-xs font-medium text-white/30">{stat.sub}</p>
+                                </div>
+                            ))}
+                        </div>
+                    </div>
+
+                    <InsightsPanel insights={insightsQuery.data} loading={insightsQuery.isLoading} />
+                </motion.header>
+
+                <motion.section variants={itemVars} className="mb-10 grid gap-6 md:grid-cols-2 xl:grid-cols-4">
+                    {heroCards.map((card) => (
+                        <motion.div
+                            key={card.title}
+                            whileHover={{ y: -5, transition: { duration: 0.2 } }}
+                            className={`relative overflow-hidden rounded-[32px] border bg-gradient-to-br p-8 shadow-xl ${card.tone}`}
+                        >
+                            <div className="flex items-center justify-between">
+                                <div className="rounded-2xl border border-white/10 bg-white/10 p-3 backdrop-blur-md">{card.icon}</div>
+                                <ArrowUpRight className="h-4 w-4 text-white/20" />
+                            </div>
+                            <p className="mt-6 font-outfit text-[11px] font-bold uppercase tracking-[0.2em] text-white/40">{card.title}</p>
+                            <p className="mt-2 font-outfit text-5xl font-black text-white">{card.value}</p>
+                            <p className="mt-3 text-sm leading-relaxed text-white/40 font-medium">{card.copy}</p>
+
+                            {/* subtle decorative glow */}
+                            <div className="absolute -right-4 -bottom-4 h-24 w-24 rounded-full bg-white/5 blur-3xl" />
+                        </motion.div>
+                    ))}
+                </motion.section>
+
+                <div className="grid gap-8">
+                    <motion.section variants={itemVars} className="grid gap-8 xl:grid-cols-[1.15fr_0.85fr]">
+                        <div className="rounded-[32px] border border-white/10 bg-white/[0.02] p-5 backdrop-blur-xl shadow-xl">
+                            <div className="mb-5 flex items-center justify-between">
+                                <div>
+                                    <p className="font-outfit text-[10px] font-bold uppercase tracking-[0.2em] text-emerald-400">Activity</p>
+                                    <h2 className="mt-1.5 font-outfit text-2xl font-black text-white">Solve Heatmap</h2>
+                                </div>
+                                <Activity className="h-5 w-5 text-emerald-400 opacity-50" />
+                            </div>
+                            <ActivityHeatmap activity={activityQuery.data || []} problems={problemLiteQuery.data || []} />
+                        </div>
+
+                        <div className="flex flex-col rounded-[32px] border border-white/10 bg-white/[0.02] p-5 backdrop-blur-xl shadow-xl lg:max-h-[520px]">
+                            <div className="mb-5">
+                                <p className="font-outfit text-[10px] font-bold uppercase tracking-[0.2em] text-amber-400">Revision Engine</p>
+                                <h2 className="mt-1.5 font-outfit text-2xl font-black text-white">Spaced Repetition</h2>
+                            </div>
+                            <RevisionQueue data={revisionsQuery.data} loading={revisionsQuery.isLoading} onRefresh={() => void refreshAll()} />
+                        </div>
+                    </motion.section>
+
+                    <motion.section variants={itemVars} className="grid gap-8 xl:grid-cols-[1.15fr_0.85fr]">
+                        <div className="rounded-[40px] border border-white/10 bg-white/[0.02] p-8 backdrop-blur-xl shadow-xl">
+                            <TopicMasteryChart topics={topicsQuery.data || []} loading={topicsQuery.isLoading} />
+                        </div>
+
+                        <div className="grid gap-8">
+                            <div className="rounded-[36px] border border-white/10 bg-white/[0.02] p-8 backdrop-blur-xl shadow-xl">
+                                <div className="mb-6">
+                                    <p className="font-outfit text-[11px] font-bold uppercase tracking-[0.2em] text-rose-400">Difficulty Balance</p>
+                                    <h3 className="mt-2 font-outfit text-2xl font-black text-white">Distribution</h3>
+                                </div>
+                                <DifficultyPieChart stats={difficultyStats} />
+                            </div>
+                            <PlatformBreakdown items={platformsQuery.data || []} loading={platformsQuery.isLoading} />
+                        </div>
+                    </motion.section>
+
+                    <motion.section variants={itemVars}>
+                        <AchievementsGrid items={achievementsQuery.data || []} loading={achievementsQuery.isLoading} />
+                    </motion.section>
+
+                    <motion.section variants={itemVars} className="pb-10">
+                        <div className="rounded-[40px] border border-white/10 bg-white/[0.02] p-2 backdrop-blur-xl shadow-xl">
+                            <ProblemsList />
+                        </div>
+                    </motion.section>
+                </div>
+            </motion.div>
+
+            <ProfileModal
+                user={user}
+                isOpen={isProfileOpen}
+                onClose={() => setIsProfileOpen(false)}
+                onUpdate={async () => {
+                    const { data: { session } } = await supabase.auth.getSession();
+                    if (session) {
+                        setUser(session.user);
+                    }
+                }}
+            />
         </div>
-      </div>
     );
-  }
-
-  if (!user) return null; // Redirect is happening
-
-  // ────────────────────────────────────────────────
-  // 5. MAIN DASHBOARD
-  // ────────────────────────────────────────────────
-  return (
-    <div className="min-h-screen p-8 md:p-12 lg:p-16 selection:bg-primary/30 relative overflow-hidden">
-      {/* Background Gradients */}
-      <div className="absolute top-[-20%] left-[-10%] w-[50%] h-[50%] bg-primary/20 blur-[120px] rounded-full pointer-events-none"></div>
-      <div className="absolute bottom-[-20%] right-[-10%] w-[40%] h-[40%] bg-blue-500/10 blur-[100px] rounded-full pointer-events-none"></div>
-
-      {/* Header */}
-      <header className="mb-10 relative z-10 flex flex-col md:flex-row md:items-center justify-between gap-6">
-        <div>
-          <div className="flex items-center gap-3 mb-1">
-            <h1 className="text-4xl md:text-5xl font-extrabold tracking-tight bg-gradient-to-r from-white to-white/60 bg-clip-text text-transparent">
-              DSAFlow
-            </h1>
-
-          </div>
-          <p className="text-muted-foreground text-base">
-            Welcome back,{' '}
-            <span className="text-white/80 font-medium">
-              {user.user_metadata?.full_name || user.email?.split('@')[0] || 'Coder'}
-            </span>
-          </p>
-        </div>
-
-        <div className="flex items-center gap-3 flex-wrap">
-          {/* Velocity Badge */}
-          <div className="hidden lg:flex items-center gap-2 bg-white/5 border border-white/10 px-4 py-2.5 rounded-2xl backdrop-blur-md">
-            <div className="flex flex-col items-end">
-              <span className="text-[10px] font-bold text-muted-foreground uppercase tracking-widest leading-none mb-1">Velocity</span>
-              <span className="text-sm font-black text-white leading-none">{(velocity.daily_velocity || 0).toFixed(1)}/day</span>
-            </div>
-            <div className="p-1.5 bg-yellow-400/10 rounded-lg">
-              <svg className="w-3.5 h-3.5 text-yellow-400" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round"><path d="M13 2L3 14h9l-1 8 10-12h-9l1-8z" /></svg>
-            </div>
-          </div>
-
-          {/* Streak Badge */}
-          <div className="flex items-center gap-2 bg-gradient-to-br from-orange-500/20 to-red-500/20 border border-orange-500/30 px-5 py-2.5 rounded-2xl backdrop-blur-md shadow-lg shadow-orange-500/5">
-            <span className="text-xl">🔥</span>
-            <div className="flex flex-col">
-              <span className="text-xs font-bold text-orange-400 uppercase tracking-widest leading-none">Streak</span>
-              <span className="text-lg font-black text-white leading-tight">{userStats.current_streak} Days</span>
-            </div>
-          </div>
-
-          {/* API Status */}
-          <div className="hidden md:flex items-center gap-2 bg-white/5 border border-white/10 px-4 py-2 rounded-full backdrop-blur-md">
-            <div className={`w-2 h-2 rounded-full animate-pulse ${connectionStatus === 'online' ? 'bg-green-400' :
-              connectionStatus === 'offline' ? 'bg-red-400' : 'bg-yellow-400'
-              }`}></div>
-            <span className="text-sm font-medium">
-              {connectionStatus.charAt(0).toUpperCase() + connectionStatus.slice(1)}
-            </span>
-          </div>
-
-          {/* User Avatar + Logout */}
-          <div className="flex items-center gap-2">
-            <button
-              onClick={() => setIsProfileOpen(true)}
-              className="w-9 h-9 rounded-full bg-gradient-to-br from-primary/60 to-blue-500/60 flex items-center justify-center text-sm font-bold text-white border border-white/10 overflow-hidden hover:scale-105 active:scale-95 transition-all shadow-md focus:outline-none focus:ring-2 focus:ring-primary/50"
-              title="Edit Profile Settings"
-            >
-              {user.user_metadata?.avatar_url ? (
-                <img src={user.user_metadata.avatar_url} alt="avatar" className="w-full h-full object-cover" />
-              ) : (
-                (user.user_metadata?.full_name?.[0] || user.email?.[0] || 'U').toUpperCase()
-              )}
-            </button>
-            <button
-              onClick={() => {
-                queryClient.invalidateQueries({ queryKey: ['stats', user.id] });
-                queryClient.invalidateQueries({ queryKey: ['problems', user.id] });
-                queryClient.invalidateQueries({ queryKey: ['userStats', user.id] });
-                queryClient.invalidateQueries({ queryKey: ['velocity', user.id] });
-              }}
-              className="px-3 py-2 text-xs font-semibold text-white/60 hover:text-white bg-white/5 hover:bg-white/10 border border-white/10 rounded-xl transition-all"
-              title="Manual Refresh"
-            >
-              🔄
-            </button>
-            <button
-              onClick={() => router.push('/settings')}
-              className="px-3 py-2 text-xs font-semibold text-white/60 hover:text-white bg-white/5 hover:bg-white/10 border border-white/10 rounded-xl transition-all"
-              title="Settings"
-            >
-              ⚙️
-            </button>
-            <button
-              onClick={handleLogout}
-              className="px-3 py-2 text-xs font-semibold text-white/60 hover:text-white bg-white/5 hover:bg-red-500/10 border border-white/10 hover:border-red-500/30 rounded-xl transition-all"
-            >
-              Sign Out
-            </button>
-          </div>
-        </div>
-      </header>
-
-      <main className="relative z-10 space-y-8">
-        {/* 🌟 ROW 1: TODAY OVERVIEW 🌟 */}
-        <section className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-          {/* Left Column: High-Priority Daily Stats */}
-          <div className="flex flex-col gap-6">
-            <div className="glass-panel rounded-2xl p-6 flex items-center justify-between border border-green-500/20 relative overflow-hidden group hover:scale-[1.02] transition-transform">
-              <div className="absolute top-0 right-0 w-32 h-32 bg-green-500/10 rounded-full blur-[40px] pointer-events-none" />
-              <div className="relative z-10">
-                <h3 className="text-xs font-bold text-green-400 uppercase tracking-widest mb-1">Solved Today</h3>
-                {loading ? <div className="h-10 w-16 bg-white/5 animate-pulse rounded" /> : <p className="text-5xl font-black text-white">{solvedToday}</p>}
-              </div>
-              <div className="w-14 h-14 rounded-2xl bg-gradient-to-br from-green-500/20 to-transparent flex items-center justify-center border border-green-500/10 shadow-lg relative z-10">
-                <span className="text-2xl">🚀</span>
-              </div>
-            </div>
-
-            <div className="glass-panel rounded-2xl p-6 flex items-center justify-between border border-orange-500/20 relative overflow-hidden group hover:scale-[1.02] transition-transform">
-              <div className="absolute top-0 right-0 w-32 h-32 bg-orange-500/10 rounded-full blur-[40px] pointer-events-none" />
-              <div className="relative z-10">
-                <h3 className="text-xs font-bold text-orange-400 uppercase tracking-widest mb-1">Current Streak</h3>
-                {loading ? <div className="h-10 w-16 bg-white/5 animate-pulse rounded" /> : <p className="text-5xl font-black text-white">{userStats.current_streak || 0}</p>}
-              </div>
-              <div className="w-14 h-14 rounded-2xl bg-gradient-to-br from-orange-500/20 to-transparent flex items-center justify-center border border-orange-500/10 shadow-lg relative z-10">
-                <span className="text-2xl">🔥</span>
-              </div>
-            </div>
-          </div>
-
-          {/* Right Column: Revision Queue */}
-          <div className="lg:col-span-2 glass-panel rounded-2xl p-6 flex flex-col h-full overflow-hidden border border-primary/20 hover:border-primary/40 transition-colors">
-            <div className="flex items-center justify-between mb-4">
-              <h2 className="text-xl font-bold tracking-tight text-white flex items-center gap-2">
-                <span className="text-primary">⚡</span> Revision Queue
-              </h2>
-              <span className="bg-primary/20 text-primary text-[10px] font-black px-2.5 py-1 rounded-md uppercase tracking-widest border border-primary/20">DUE TODAY</span>
-            </div>
-            <div className="flex-1 overflow-y-auto pr-2 custom-scrollbar">
-              <RevisionQueue />
-            </div>
-          </div>
-        </section>
-
-        {/* 📊 ROW 2: HISTORICAL OVERVIEW 📊 */}
-        <section>
-          <StatsCards stats={stats} loading={loading} />
-        </section>
-
-        {/* 🗺️ ROW 3: HEATMAP 🗺️ */}
-        <section className="glass-panel rounded-2xl p-6 md:p-8 flex flex-col justify-center">
-          <h2 className="text-xl font-semibold tracking-tight mb-6">Activity Heatmap</h2>
-          {loading ? (
-            <div className="h-28 bg-white/5 animate-pulse rounded-xl"></div>
-          ) : (
-            <ActivityHeatmap problems={problems} />
-          )}
-        </section>
-
-        {/* 📈 ROW 4: ANALYTICS CHARTS 📈 */}
-        <section className="grid grid-cols-1 lg:grid-cols-5 gap-6">
-          <div className="lg:col-span-3 glass-panel rounded-2xl p-6">
-            <h2 className="text-xl font-semibold tracking-tight mb-4">Topic Mastery</h2>
-            {loading ? (
-              <div className="h-48 bg-white/5 animate-pulse rounded-xl"></div>
-            ) : (
-              <TopicMasteryChart problems={problems} />
-            )}
-          </div>
-
-          <div className="lg:col-span-2 glass-panel rounded-2xl p-6">
-            <h2 className="text-xl font-semibold tracking-tight mb-4">Difficulty Split</h2>
-            {loading ? (
-              <div className="h-48 bg-white/5 animate-pulse rounded-xl"></div>
-            ) : (
-              <DifficultyPieChart stats={stats} />
-            )}
-          </div>
-        </section>
-
-        {/* 📜 ROW 5: RECENT SOLVES 📜 */}
-        <section className="glass-panel rounded-2xl p-6 md:p-8 transition-all duration-300 hover:shadow-[0_8px_40px_rgba(0,0,0,0.12)]">
-          <div className="flex items-center justify-between mb-6">
-            <h2 className="text-2xl font-semibold tracking-tight">Recent Solves</h2>
-            <span className="text-sm text-muted-foreground">{stats.solved} total</span>
-          </div>
-          <ProblemsList problems={problems} loading={loading} />
-
-          {hasNextPage && (
-            <div className="mt-8 flex justify-center">
-              <button
-                onClick={() => fetchNextPage()}
-                disabled={isFetchingNextPage}
-                className="px-6 py-2.5 bg-white/5 hover:bg-white/10 border border-white/10 rounded-xl text-sm font-semibold text-white/80 transition-all disabled:opacity-50"
-              >
-                {isFetchingNextPage ? 'Loading more...' : 'Load More Problems'}
-              </button>
-            </div>
-          )}
-        </section>
-      </main>
-
-      <ProfileModal
-        user={user}
-        isOpen={isProfileOpen}
-        onClose={() => setIsProfileOpen(false)}
-        onUpdate={refreshUser}
-      />
-    </div >
-  );
 }
