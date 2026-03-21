@@ -5,7 +5,7 @@ import dynamic from 'next/dynamic';
 import { useRouter } from 'next/navigation';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import type { User } from '@supabase/supabase-js';
-import { motion, AnimatePresence, Variants } from 'framer-motion';
+import { motion, Variants } from 'framer-motion';
 import {
     Activity,
     ArrowUpRight,
@@ -155,7 +155,7 @@ export default function Dashboard() {
     const topicsQuery = useQuery({
         queryKey: ['topics', user?.id],
         enabled: !!user,
-        queryFn: () => apiFetch<any[]>('/analytics/topics'),
+        queryFn: () => apiFetch<Record<string, unknown>[]>('/analytics/topics'),
     });
 
     const platformsQuery = useQuery({
@@ -167,19 +167,19 @@ export default function Dashboard() {
     const revisionsQuery = useQuery({
         queryKey: ['revisions', user?.id],
         enabled: !!user,
-        queryFn: () => apiFetch<any>('/revision-queue'),
+        queryFn: () => apiFetch<Record<string, unknown>>('/revision-queue'),
     });
 
     const achievementsQuery = useQuery({
         queryKey: ['achievements', user?.id],
         enabled: !!user,
-        queryFn: () => apiFetch<any[]>('/achievements'),
+        queryFn: () => apiFetch<Record<string, unknown>[]>('/achievements'),
     });
 
     const insightsQuery = useQuery({
         queryKey: ['insights', user?.id],
         enabled: !!user,
-        queryFn: () => apiFetch<any>('/analytics/insights'),
+        queryFn: () => apiFetch<Record<string, unknown>>('/analytics/insights'),
     });
 
     const problemLiteQuery = useQuery({

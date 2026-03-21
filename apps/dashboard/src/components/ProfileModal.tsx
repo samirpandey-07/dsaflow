@@ -2,6 +2,7 @@
 
 import React, { useState } from 'react';
 import { User as UserIcon, X, Loader2, Save, Link as LinkIcon, Edit3 } from 'lucide-react';
+import Image from 'next/image';
 import { supabase } from '../lib/supabase';
 import type { User } from '@supabase/supabase-js';
 
@@ -36,8 +37,9 @@ export default function ProfileModal({ user, isOpen, onClose, onUpdate }: Profil
 
             onUpdate(); // Trigger parent re-render for new names
             onClose();
-        } catch (err: any) {
-            setError(err.message || 'Failed to update profile');
+        } catch (err: unknown) {
+            const message = err instanceof Error ? err.message : 'Failed to update profile';
+            setError(message);
         } finally {
             setLoading(false);
         }
@@ -108,7 +110,14 @@ export default function ProfileModal({ user, isOpen, onClose, onUpdate }: Profil
                         <div className="flex justify-center py-2">
                             <div className="w-16 h-16 rounded-full bg-gradient-to-br from-primary/60 to-blue-500/60 flex items-center justify-center text-xl font-bold text-white border-2 border-white/10 overflow-hidden shadow-lg">
                                 {avatarUrl ? (
-                                    <img src={avatarUrl} alt="Preview" className="w-full h-full object-cover" onError={(e) => e.currentTarget.style.display = 'none'} />
+                                    <Image 
+                                        src={avatarUrl} 
+                                        alt="Preview" 
+                                        width={64}
+                                        height={64}
+                                        className="w-full h-full object-cover" 
+                                        onError={() => setAvatarUrl('')} 
+                                    />
                                 ) : (
                                     name ? name.charAt(0).toUpperCase() : (user.email?.[0] || 'U').toUpperCase()
                                 )}

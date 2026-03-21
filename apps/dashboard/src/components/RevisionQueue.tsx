@@ -6,7 +6,6 @@ import {
     CheckCircle2, 
     Clock3, 
     SkipForward, 
-    TimerReset, 
     AlertCircle, 
     CalendarCheck, 
     Hourglass,

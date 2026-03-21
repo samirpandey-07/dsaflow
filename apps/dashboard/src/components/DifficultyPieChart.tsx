@@ -14,7 +14,7 @@ interface Stats {
 const COLORS = ['#22d3ee', '#f59e0b', '#ef4444'];
 const LABELS = ['Easy', 'Medium', 'Hard'];
 
-const CustomTooltip = ({ active, payload }: any) => {
+const CustomTooltip = ({ active, payload }: { active?: boolean; payload?: { name: string; value: number; payload: { fill: string } }[] }) => {
     if (active && payload && payload.length) {
         return (
             <div className="bg-black/80 border border-white/10 rounded-lg px-3 py-2 text-sm backdrop-blur-md">
@@ -28,8 +28,8 @@ const CustomTooltip = ({ active, payload }: any) => {
     return null;
 };
 
-const renderCustomLabel = ({ cx, cy, midAngle, innerRadius, outerRadius, percent }: any) => {
-    if (percent < 0.05) return null;
+const renderCustomLabel = ({ cx, cy, midAngle, innerRadius, outerRadius, percent }: { cx?: number; cy?: number; midAngle?: number; innerRadius?: number; outerRadius?: number; percent?: number }) => {
+    if (percent === undefined || percent < 0.05 || cx === undefined || cy === undefined || midAngle === undefined || innerRadius === undefined || outerRadius === undefined) return null;
     const RADIAN = Math.PI / 180;
     const radius = innerRadius + (outerRadius - innerRadius) * 0.5;
     const x = cx + radius * Math.cos(-midAngle * RADIAN);

@@ -19,7 +19,7 @@ export default function SettingsPage() {
                 setUserEmail(session.user.email || '');
             }
         });
-    }, [router]);
+    }, [router, setUserEmail]);
 
     const handleSendDigest = async () => {
         setSending(true);
@@ -42,7 +42,7 @@ export default function SettingsPage() {
             } else {
                 setResult({ type: 'success', message: data.message });
             }
-        } catch (err) {
+        } catch {
             setResult({ type: 'error', message: 'Failed to reach the API. Is the server running?' });
         } finally {
             setSending(false);
@@ -77,7 +77,7 @@ export default function SettingsPage() {
                         <div>
                             <h2 className="text-lg font-bold text-white">Weekly Email Digest</h2>
                             <p className="text-sm text-white/50 mt-1">
-                                Every Monday at 9 AM UTC you'll receive a personalized summary of your coding activity, streak, difficulty breakdown, top topics, and recent solves.
+                                Every Monday at 9 AM UTC you&apos;ll receive a personalized summary of your coding activity, streak, difficulty breakdown, top topics, and recent solves.
                             </p>
                         </div>
                     </div>
@@ -90,7 +90,7 @@ export default function SettingsPage() {
 
                         <div className="bg-[#0f2027] border border-blue-900/30 rounded-xl p-4">
                             <p className="text-xs text-blue-400 font-semibold mb-1">📅 Schedule</p>
-                            <p className="text-sm text-white/70">Automatically sent every <strong className="text-white">Monday at 9:00 AM UTC</strong>. No action required — it's fully automatic once Redis is configured.</p>
+                            <p className="text-sm text-white/70">Automatically sent every <strong className="text-white">Monday at 9:00 AM UTC</strong>. No action required &mdash; it&apos;s fully automatic once Redis is configured.</p>
                         </div>
 
                         {/* Manual Trigger */}
@@ -130,7 +130,7 @@ export default function SettingsPage() {
                         <li>Set <code className="bg-white/10 px-1.5 py-0.5 rounded text-white/80">RESEND_API_KEY=re_...</code> with your key</li>
                         <li>Optionally set <code className="bg-white/10 px-1.5 py-0.5 rounded text-white/80">FROM_EMAIL=</code> to your verified Resend domain</li>
                         <li>Restart the API server: <code className="bg-white/10 px-1.5 py-0.5 rounded text-white/80">node index.js</code></li>
-                        <li>Come back here and click "Send Test Digest"</li>
+                        <li>Come back here and click &quot;Send Test Digest&quot;</li>
                     </ol>
                 </div>
             </div>

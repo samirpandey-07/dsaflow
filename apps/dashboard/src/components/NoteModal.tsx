@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useState, useCallback } from 'react';
 import { X, MessageSquare, Plus } from 'lucide-react';
 import { apiFetch } from '../lib/api';
 
@@ -23,11 +23,7 @@ export default function NoteModal({ problemId, problemName, isOpen, onClose }: N
     const [loading, setLoading] = useState(true);
     const [saving, setSaving] = useState(false);
 
-    useEffect(() => {
-        if (isOpen) fetchNotes();
-    }, [isOpen, problemId]);
-
-    const fetchNotes = async () => {
+    const fetchNotes = useCallback(async () => {
         setLoading(true);
         try {
             const data = await apiFetch<Note[]>(`/problems/${problemId}/notes`);
@@ -37,7 +33,11 @@ export default function NoteModal({ problemId, problemName, isOpen, onClose }: N
         } finally {
             setLoading(false);
         }
-    };
+    }, [problemId]);
+
+    useEffect(() => {
+        if (isOpen) fetchNotes();
+    }, [isOpen, fetchNotes]);
 
     const handleSave = async () => {
         if (!newNote.trim()) return;

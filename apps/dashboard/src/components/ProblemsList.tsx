@@ -42,7 +42,7 @@ export default function ProblemsList() {
     const [filterDifficulty, setFilterDifficulty] = useState('All');
     const [filterPlatform, setFilterPlatform] = useState('All');
     const [revisionStatus, setRevisionStatus] = useState('all');
-    const [sortBy, setSortBy] = useState('solved_at');
+    const [sortBy] = useState('solved_at');
     const [sortOrder, setSortOrder] = useState<'asc' | 'desc'>('desc');
 
     const queryKey = ['problems-table', searchQuery, filterTopic, filterDifficulty, filterPlatform, revisionStatus, sortBy, sortOrder];

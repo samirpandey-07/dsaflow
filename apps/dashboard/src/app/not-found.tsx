@@ -29,8 +29,8 @@ export default function NotFound() {
                         ROUTE_NOT_FOUND
                     </h1>
                     <p className="text-white/40 text-lg font-medium leading-relaxed">
-                        The problem you're looking for doesn't exist in our memory. <br className="hidden md:block" />
-                        Maybe it's time to go back to base?
+                        The problem you&apos;re looking for doesn&apos;t exist in our memory. <br className="hidden md:block" />
+                        Maybe it&apos;s time to go back to base?
                     </p>
                 </div>
 

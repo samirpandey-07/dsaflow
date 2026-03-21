@@ -5,6 +5,7 @@ import { supabase } from '../../lib/supabase';
 import { Auth } from '@supabase/auth-ui-react';
 import { ThemeSupa } from '@supabase/auth-ui-shared';
 import { useRouter, useSearchParams } from 'next/navigation';
+import type { Session } from '@supabase/supabase-js';
 
 export default function LoginPage() {
     const [mounted, setMounted] = useState(false);
@@ -52,7 +53,7 @@ function LoginContent() {
         }
         setReturnUrl(constructedUrl);
 
-        const handleRedirect = async (session: any) => {
+        const handleRedirect = async (session: Session | null) => {
             if (isVSCode && session?.access_token) {
                 const redirectUrl = `${scheme}://${extId}/auth?token=${session.access_token}`;
                 window.location.href = redirectUrl;
