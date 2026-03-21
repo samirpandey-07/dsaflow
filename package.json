@@ -9,6 +9,7 @@
   ],
   "scripts": {
     "dev": "npm run dev --workspaces",
+    "build": "npm run build --workspace=dashboard",
     "supabase:link": "cd dsaflow && npx supabase link",
     "supabase:push": "cd dsaflow && npx supabase db push",
     "supabase:start": "cd dsaflow && npx supabase start",
