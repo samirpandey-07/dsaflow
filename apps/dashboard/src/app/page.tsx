@@ -21,6 +21,8 @@ import ProfileModal from '../components/ProfileModal';
 import PlatformBreakdown from '../components/PlatformBreakdown';
 import InsightsPanel from '../components/InsightsPanel';
 import AchievementsGrid from '../components/AchievementsGrid';
+import GoalsPanel from '../components/GoalsPanel';
+import InterviewReadinessCard from '../components/InterviewReadinessCard';
 import { supabase } from '../lib/supabase';
 import { apiFetch } from '../lib/api';
 
@@ -84,6 +86,42 @@ interface RevisionQueueData {
         due_today: number;
         overdue: number;
         upcoming: number;
+    };
+}
+
+interface GoalItem {
+    id: string;
+    title: string;
+    metric: string;
+    period: string;
+    target_count: number;
+    current_value: number;
+    progress_pct: number;
+    remaining: number;
+    computed_status: string;
+    focus_topic?: string | null;
+    focus_platform?: string | null;
+}
+
+interface GoalSummaryResponse {
+    goals: GoalItem[];
+    summary: {
+        total: number;
+        active: number;
+        completed: number;
+    };
+}
+
+interface ReadinessResponse {
+    score: number;
+    level: string;
+    recommendations: string[];
+    breakdown: {
+        solve_volume: number;
+        difficulty_balance: number;
+        topic_breadth: number;
+        streak_discipline: number;
+        revision_health: number;
     };
 }
 
@@ -164,10 +202,10 @@ export default function Dashboard() {
 
                 const keys = ['problems-table'];
                 if (changedSolveShape) {
-                    keys.push('overview', 'activity', 'topics', 'platforms', 'achievements', 'insights', 'problem-lite');
+                    keys.push('overview', 'activity', 'topics', 'platforms', 'achievements', 'insights', 'problem-lite', 'goals', 'readiness');
                 }
                 if (changedRevisionShape) {
-                    keys.push('overview', 'revisions');
+                    keys.push('overview', 'revisions', 'readiness');
                 }
 
                 void invalidateKeys([...new Set(keys)]);
@@ -230,6 +268,18 @@ export default function Dashboard() {
         queryKey: ['insights', user?.id],
         enabled: !!user,
         queryFn: () => apiFetch<Insights>('/analytics/insights'),
+    });
+
+    const goalsQuery = useQuery({
+        queryKey: ['goals', user?.id],
+        enabled: !!user,
+        queryFn: () => apiFetch<GoalSummaryResponse>('/goals'),
+    });
+
+    const readinessQuery = useQuery({
+        queryKey: ['readiness', user?.id],
+        enabled: !!user,
+        queryFn: () => apiFetch<ReadinessResponse>('/interview-readiness'),
     });
 
     const problemLiteQuery = useQuery({
@@ -299,6 +349,8 @@ export default function Dashboard() {
             queryClient.invalidateQueries({ queryKey: ['revisions'] }),
             queryClient.invalidateQueries({ queryKey: ['achievements'] }),
             queryClient.invalidateQueries({ queryKey: ['insights'] }),
+            queryClient.invalidateQueries({ queryKey: ['goals'] }),
+            queryClient.invalidateQueries({ queryKey: ['readiness'] }),
             queryClient.invalidateQueries({ queryKey: ['problem-lite'] }),
             queryClient.invalidateQueries({ queryKey: ['problems-table'] }),
             queryClient.invalidateQueries({ queryKey: ['health'] }),
@@ -445,6 +497,11 @@ export default function Dashboard() {
                             <div className="absolute -right-4 -bottom-4 h-24 w-24 rounded-full bg-white/5 blur-3xl" />
                         </motion.div>
                     ))}
+                </motion.section>
+
+                <motion.section variants={itemVars} className="mb-10 grid gap-8 xl:grid-cols-[0.95fr_1.05fr]">
+                    <InterviewReadinessCard data={readinessQuery.data} loading={readinessQuery.isLoading} />
+                    <GoalsPanel goals={goalsQuery.data?.goals} loading={goalsQuery.isLoading} />
                 </motion.section>
 
                 <div className="grid gap-8">

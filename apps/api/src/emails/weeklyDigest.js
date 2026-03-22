@@ -147,7 +147,7 @@ function buildDigestEmail(data) {
 
         <!-- CTA -->
         <tr><td style="padding:24px 0;text-align:center;">
-          <a href="http://localhost:3000" style="display:inline-block;background:linear-gradient(135deg,#7c3aed,#3b82f6);color:#fff;font-size:15px;font-weight:700;text-decoration:none;padding:14px 32px;border-radius:12px;">
+          <a href="https://dsaflow-dashboard.vercel.app" style="display:inline-block;background:linear-gradient(135deg,#7c3aed,#3b82f6);color:#fff;font-size:15px;font-weight:700;text-decoration:none;padding:14px 32px;border-radius:12px;">
             Open Dashboard →
           </a>
         </td></tr>

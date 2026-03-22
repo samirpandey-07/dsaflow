@@ -1,5 +1,6 @@
 const problemRepository = require('../repositories/problem.repository');
-const { cache } = require('./cache.service');
+const { cache, invalidateUserCache } = require('./cache.service');
+const publicProfileService = require('./public-profile.service');
 
 const spacedRepetitionIntervals = [1, 3, 7, 14, 30];
 
@@ -32,6 +33,8 @@ async function reviseProblem(client, userId, problemId, action = 'complete', day
     }
 
     await cache.del(`revision-queue:${userId}`);
+    await invalidateUserCache(userId);
+    await publicProfileService.refreshPublicProfileSnapshot(client, userId);
     return data;
 }
 

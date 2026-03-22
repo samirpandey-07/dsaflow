@@ -14,7 +14,7 @@ const outfit = Outfit({
 });
 
 export const metadata: Metadata = {
-  metadataBase: new URL(process.env.NEXT_PUBLIC_SITE_URL || "http://localhost:3000"),
+  metadataBase: new URL(process.env.NEXT_PUBLIC_SITE_URL || "https://dsaflow-dashboard.vercel.app"),
   title: "DSAFlow | Master Data Structures & Algorithms",
   description: "Track your DSA progress, manage revision cycles with spaced repetition, and get intelligent insights for your code. The ultimate companion for competitive programmers.",
   keywords: ["DSA", "Data Structures", "Algorithms", "Competitive Programming", "LeetCode Tracker", "Spaced Repetition", "Coding Interview Prep"],
@@ -22,7 +22,7 @@ export const metadata: Metadata = {
   openGraph: {
     title: "DSAFlow | Master Data Structures & Algorithms",
     description: "The ultimate companion for competitive programmers to track and revise problems efficiently.",
-    url: "https://github.com/samirpandey-07/dsaflow",
+    url: "https://dsaflow-dashboard.vercel.app",
     siteName: "DSAFlow",
     images: [
       {

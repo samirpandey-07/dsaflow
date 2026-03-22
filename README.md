@@ -202,7 +202,7 @@ cd apps/api
 # Add .env with your Supabase/Gemini keys
 npm run dev
 ```
-Server runs at `http://localhost:3001`
+Server runs at `https://dsaflow.onrender.com`
 
 ### Start Dashboard
 ```bash
@@ -210,7 +210,7 @@ cd apps/dashboard
 # Add .env.local with Supabase keys
 npm run dev
 ```
-Open `http://localhost:3000`
+Open `https://dsaflow-dashboard.vercel.app`
 
 ### Run VS Code Extension
 1. Open `packages/vscode-extension` in VS Code.
@@ -267,7 +267,7 @@ Create `apps/dashboard/.env.local` from `apps/dashboard/.env.local.example` and 
 ```env
 NEXT_PUBLIC_SUPABASE_URL=your_url
 NEXT_PUBLIC_SUPABASE_ANON_KEY=your_key
-NEXT_PUBLIC_API_URL=http://localhost:3001
+NEXT_PUBLIC_API_URL=https://dsaflow.onrender.com
 ```
 
 ### Helpful scripts

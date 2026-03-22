@@ -13,7 +13,7 @@ function buildProblemListQuery(client, userId, options) {
 
     let query = client
         .from('problems')
-        .select('id, problem_name, topic, difficulty, language, platform, problem_url, code_snippet, solved_at, revision_count, next_revision_at')
+        .select('id, problem_name, topic, difficulty, language, platform, problem_url, code_snippet, tags, solved_at, revision_count, next_revision_at')
         .eq('user_id', userId)
         .order(sortBy, { ascending })
         .limit(limit + 1);
@@ -54,7 +54,7 @@ async function bulkCreateProblems(client, rows) {
 async function findProblemByIdentity(client, userId, problemName, platform) {
     return client
         .from('problems')
-        .select('id, problem_name, topic, difficulty, language, platform, problem_url, code_snippet, solved_at, revision_count, next_revision_at')
+        .select('id, problem_name, topic, difficulty, language, platform, problem_url, code_snippet, tags, solved_at, revision_count, next_revision_at')
         .eq('user_id', userId)
         .eq('problem_name', problemName)
         .eq('platform', platform)
@@ -70,7 +70,7 @@ async function listProblems(client, userId, options) {
 async function fetchAllProblems(client, userId) {
     return client
         .from('problems')
-        .select('id, problem_name, topic, difficulty, language, platform, problem_url, code_snippet, solved_at, revision_count, next_revision_at')
+        .select('id, problem_name, topic, difficulty, language, platform, problem_url, code_snippet, tags, solved_at, revision_count, next_revision_at')
         .eq('user_id', userId)
         .order('solved_at', { ascending: false });
 }

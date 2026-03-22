@@ -13,7 +13,7 @@ function getResend() {
 }
 
 function getDashboardUrl() {
-    return process.env.DASHBOARD_URL || process.env.NEXT_PUBLIC_SITE_URL || 'http://localhost:3000';
+    return process.env.DASHBOARD_URL || process.env.NEXT_PUBLIC_SITE_URL || 'https://dsaflow-dashboard.vercel.app';
 }
 
 function initRevisionReminder() {

@@ -2,6 +2,7 @@ const problemRepository = require('../repositories/problem.repository');
 const topicRepository = require('../repositories/topic.repository');
 const { refreshUserStats } = require('./streak.service');
 const { invalidateUserCache, cache } = require('./cache.service');
+const publicProfileService = require('./public-profile.service');
 
 async function rebuildUserStats(client, userId) {
     const { data: problems, error } = await problemRepository.fetchAllProblems(client, userId);
@@ -27,6 +28,8 @@ async function createProblem(client, userId, payload) {
         platform: payload.platform,
         problem_url: payload.problem_url || null,
         code_snippet: payload.code_snippet || null,
+        tags: payload.tags || [],
+        solved_at: payload.solved_at || new Date().toISOString(),
         revision_count: 0,
         next_revision_at: new Date(Date.now() + 86400000).toISOString(),
     });
@@ -38,6 +41,7 @@ async function createProblem(client, userId, payload) {
     await topicRepository.upsertTopics(client, [payload.topic]);
     await rebuildUserStats(client, userId);
     await invalidateUserCache(userId);
+    await publicProfileService.refreshPublicProfileSnapshot(client, userId);
 
     return { created: true, problem: data };
 }
@@ -62,6 +66,8 @@ async function bulkImportProblems(client, userId, payloads) {
             platform: payload.platform,
             problem_url: payload.problem_url || null,
             code_snippet: payload.code_snippet || null,
+            tags: payload.tags || [],
+            solved_at: payload.solved_at || new Date().toISOString(),
             revision_count: 0,
             next_revision_at: new Date(Date.now() + 86400000).toISOString(),
         });
@@ -78,6 +84,7 @@ async function bulkImportProblems(client, userId, payloads) {
     await topicRepository.upsertTopics(client, [...topics]);
     await rebuildUserStats(client, userId);
     await invalidateUserCache(userId);
+    await publicProfileService.refreshPublicProfileSnapshot(client, userId);
 
     return {
         imported: result.data.length,
@@ -137,6 +144,7 @@ async function updateProblem(client, userId, id, payload) {
     }
 
     await invalidateUserCache(userId);
+    await publicProfileService.refreshPublicProfileSnapshot(client, userId);
     return data;
 }
 
@@ -148,6 +156,7 @@ async function deleteProblem(client, userId, id) {
 
     await rebuildUserStats(client, userId);
     await invalidateUserCache(userId);
+    await publicProfileService.refreshPublicProfileSnapshot(client, userId);
     return { deleted: true };
 }
 
