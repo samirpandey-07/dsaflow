@@ -331,7 +331,8 @@ export default function Dashboard() {
     const healthQuery = useQuery({
         queryKey: ['health'],
         queryFn: () => apiFetch<{ status: string }>('/health'),
-        refetchInterval: 10000, // Check every 10 seconds
+        refetchInterval: 60000,
+        staleTime: 30000,
     });
 
     const connectionStatus = authLoading

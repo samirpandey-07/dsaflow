@@ -1,4 +1,5 @@
 import axios from 'axios';
+import * as fs from 'fs';
 import * as path from 'path';
 import * as crypto from 'crypto';
 import * as vscode from 'vscode';
@@ -17,6 +18,7 @@ const SIDEBAR_REFRESH_INTERVAL_MS = 5 * 60 * 1000;
 const DEFAULT_API_URL = 'https://dsaflow.onrender.com/api/problems';
 const DEFAULT_DASHBOARD_URL = 'https://dsaflow-dashboard.vercel.app';
 const DEFAULT_GLOB = '**/*.{cpp,py,java,js,ts}';
+const DEFAULT_WORKSPACE_CONFIG_FILE = '.dsaflow.json';
 const SUPPORTED_LANGUAGE_IDS = new Set(['cpp', 'python', 'java', 'javascript', 'typescript']);
 const KNOWN_TOPIC_TAGS = [
     'arrays',
@@ -62,6 +64,8 @@ type ExtensionConfig = {
     apiUrl: string;
     dashboardUrl: string;
     watchedGlob: string;
+    requireFolderApproval: boolean;
+    workspaceConfigFile: string;
     autoLogOnCreate: boolean;
     promptOnSave: boolean;
     promptForProblemUrl: boolean;
@@ -116,6 +120,11 @@ type ResolvedMetadata = {
     tags: string[];
 };
 
+type FolderTrackingConfig = {
+    trackedFolders: string[];
+    ignoredFolders: string[];
+};
+
 let extensionContext: vscode.ExtensionContext;
 let statusBarItem: vscode.StatusBarItem;
 let outputChannel: vscode.LogOutputChannel;
@@ -125,6 +134,7 @@ let solvedTodayCount = 0;
 let lastSolvedProblemId: string | null = null;
 let saveDebounceTimer: NodeJS.Timeout | undefined;
 const recentEventTimestamps = new Map<string, number>();
+const sessionSkippedFolderPrompts = new Set<string>();
 let latestSnapshot: SidebarSnapshot = {
     authenticated: false,
     today: 0,
@@ -236,6 +246,15 @@ function registerCommands(context: vscode.ExtensionContext): vscode.Disposable {
         vscode.commands.registerCommand('dsaflow.importWorkspace', async () => {
             await importWorkspaceHistory(context, { firstRun: false });
         }),
+        vscode.commands.registerCommand('dsaflow.manageTrackedFolders', async () => {
+            await manageTrackedFolders(context);
+        }),
+        vscode.commands.registerCommand('dsaflow.addTrackedFolder', async () => {
+            await addTrackedFolder(context);
+        }),
+        vscode.commands.registerCommand('dsaflow.removeTrackedFolder', async () => {
+            await removeTrackedFolder(context);
+        }),
         vscode.commands.registerCommand('dsaflow.logCurrentFile', async () => {
             const editor = vscode.window.activeTextEditor;
             if (!editor) {
@@ -243,7 +262,7 @@ function registerCommands(context: vscode.ExtensionContext): vscode.Disposable {
                 return;
             }
 
-            await handleCandidateFile(editor.document.uri, context, 'save');
+            await handleCandidateFile(editor.document.uri, context, 'manual');
         }),
         vscode.commands.registerCommand('dsaflow.openProblemItem', async (problem?: SidebarProblem) => {
             if (problem) {
@@ -412,13 +431,149 @@ async function promptToLogSavedDocument(
     }
 }
 
+function normalizeFolderPath(folderPath: string): string {
+    const normalized = folderPath.replace(/\\/g, '/').replace(/^\.\/+/, '').replace(/^\/+|\/+$/g, '').trim();
+    return normalized || '.';
+}
+
+function getWorkspaceRootForUri(uri: vscode.Uri): string | null {
+    return vscode.workspace.getWorkspaceFolder(uri)?.uri.fsPath || null;
+}
+
+function getRelativeFolderForUri(uri: vscode.Uri): string | null {
+    const workspaceRoot = getWorkspaceRootForUri(uri);
+    if (!workspaceRoot) {
+        return null;
+    }
+
+    const relativeFilePath = path.relative(workspaceRoot, uri.fsPath);
+    return normalizeFolderPath(path.dirname(relativeFilePath));
+}
+
+function getWorkspaceConfigPath(workspaceRoot: string, config: ExtensionConfig): string {
+    return path.join(workspaceRoot, config.workspaceConfigFile || DEFAULT_WORKSPACE_CONFIG_FILE);
+}
+
+function readFolderTrackingConfig(workspaceRoot: string, config: ExtensionConfig): FolderTrackingConfig {
+    const configPath = getWorkspaceConfigPath(workspaceRoot, config);
+
+    if (!fs.existsSync(configPath)) {
+        return { trackedFolders: [], ignoredFolders: [] };
+    }
+
+    try {
+        const raw = JSON.parse(fs.readFileSync(configPath, 'utf8'));
+        return {
+            trackedFolders: Array.isArray(raw?.trackedFolders) ? raw.trackedFolders.map((value: string) => normalizeFolderPath(String(value))) : [],
+            ignoredFolders: Array.isArray(raw?.ignoredFolders) ? raw.ignoredFolders.map((value: string) => normalizeFolderPath(String(value))) : [],
+        };
+    } catch (error) {
+        outputChannel.warn(`Failed to read ${config.workspaceConfigFile}: ${toMessage(error)}`);
+        return { trackedFolders: [], ignoredFolders: [] };
+    }
+}
+
+async function writeFolderTrackingConfig(
+    workspaceRoot: string,
+    config: ExtensionConfig,
+    tracking: FolderTrackingConfig,
+): Promise<void> {
+    const configPath = getWorkspaceConfigPath(workspaceRoot, config);
+    const payload = {
+        trackedFolders: [...new Set(tracking.trackedFolders.map((value) => normalizeFolderPath(value)))].sort(),
+        ignoredFolders: [...new Set(tracking.ignoredFolders.map((value) => normalizeFolderPath(value)))].sort(),
+    };
+
+    await fs.promises.writeFile(configPath, `${JSON.stringify(payload, null, 2)}\n`, 'utf8');
+}
+
+function folderRuleMatches(rule: string, relativeFolder: string): boolean {
+    const normalizedRule = normalizeFolderPath(rule);
+    const normalizedFolder = normalizeFolderPath(relativeFolder);
+
+    return normalizedRule === '.'
+        || normalizedFolder === normalizedRule
+        || normalizedFolder.startsWith(`${normalizedRule}/`);
+}
+
+function isFolderTracked(relativeFolder: string, tracking: FolderTrackingConfig): boolean {
+    return tracking.trackedFolders.some((rule) => folderRuleMatches(rule, relativeFolder));
+}
+
+function isFolderIgnored(relativeFolder: string, tracking: FolderTrackingConfig): boolean {
+    return tracking.ignoredFolders.some((rule) => folderRuleMatches(rule, relativeFolder));
+}
+
+async function ensureFolderPermission(
+    uri: vscode.Uri,
+    context: vscode.ExtensionContext,
+    config: ExtensionConfig,
+    source: 'create' | 'save' | 'manual',
+): Promise<boolean> {
+    if (!config.requireFolderApproval) {
+        return true;
+    }
+
+    const workspaceRoot = getWorkspaceRootForUri(uri);
+    const relativeFolder = getRelativeFolderForUri(uri);
+    if (!workspaceRoot || !relativeFolder) {
+        void vscode.window.showWarningMessage('Open the file inside a workspace folder before logging with DSAFlow.');
+        return false;
+    }
+
+    const tracking = readFolderTrackingConfig(workspaceRoot, config);
+    const promptKey = `${workspaceRoot}::${relativeFolder}`;
+    if (isFolderTracked(relativeFolder, tracking)) {
+        sessionSkippedFolderPrompts.delete(promptKey);
+        return true;
+    }
+    if (isFolderIgnored(relativeFolder, tracking)) {
+        outputChannel.info(`Skipping ${uri.fsPath} because folder "${relativeFolder}" is blocked in ${config.workspaceConfigFile}.`);
+        return false;
+    }
+    if (sessionSkippedFolderPrompts.has(promptKey)) {
+        return false;
+    }
+
+    const action = await vscode.window.showInformationMessage(
+        `Allow DSAFlow to ${source === 'manual' ? 'log files from' : 'auto-log files in'} "${relativeFolder}"?`,
+        'Allow Folder',
+        'Not Now',
+        'Never For This Folder',
+    );
+
+    if (action === 'Allow Folder') {
+        tracking.trackedFolders.push(relativeFolder);
+        tracking.ignoredFolders = tracking.ignoredFolders.filter((folder) => folder !== relativeFolder);
+        await writeFolderTrackingConfig(workspaceRoot, config, tracking);
+        sessionSkippedFolderPrompts.delete(promptKey);
+        await refreshStudentSnapshot(context);
+        void vscode.window.showInformationMessage(`DSAFlow will now log files inside "${relativeFolder}".`);
+        return true;
+    }
+
+    if (action === 'Never For This Folder') {
+        tracking.ignoredFolders.push(relativeFolder);
+        await writeFolderTrackingConfig(workspaceRoot, config, tracking);
+        sessionSkippedFolderPrompts.delete(promptKey);
+        return false;
+    }
+
+    sessionSkippedFolderPrompts.add(promptKey);
+    return false;
+}
+
 async function handleCandidateFile(
     uri: vscode.Uri,
     context: vscode.ExtensionContext,
-    source: 'create' | 'save',
+    source: 'create' | 'save' | 'manual',
 ): Promise<void> {
     try {
         const config = getConfig();
+        const allowed = await ensureFolderPermission(uri, context, config, source);
+        if (!allowed) {
+            return;
+        }
         const token = await context.secrets.get(SECRET_KEY);
 
         if (!config.apiUrl) {
@@ -959,6 +1114,160 @@ function updateMotivationStatusBar(): void {
     ].join('\n');
 }
 
+async function listFolderCandidates(config: ExtensionConfig): Promise<string[]> {
+    const workspaceFolders = vscode.workspace.workspaceFolders || [];
+    const fallback = workspaceFolders.map(() => '.');
+    const files = await vscode.workspace.findFiles(config.watchedGlob, '**/{node_modules,.git,.next,dist,build,out,target}/**', 500);
+    const candidates = new Set<string>(fallback);
+
+    for (const file of files) {
+        const relativeFolder = getRelativeFolderForUri(file);
+        if (relativeFolder) {
+            candidates.add(relativeFolder);
+        }
+    }
+
+    return [...candidates].sort((left, right) => left.localeCompare(right));
+}
+
+async function addTrackedFolder(context: vscode.ExtensionContext, presetFolder?: string): Promise<void> {
+    const config = getConfig();
+    const workspaceFolders = vscode.workspace.workspaceFolders || [];
+    if (!workspaceFolders.length) {
+        void vscode.window.showWarningMessage('Open a workspace folder before configuring DSAFlow tracked folders.');
+        return;
+    }
+
+    const workspaceRoot = workspaceFolders[0].uri.fsPath;
+    const tracking = readFolderTrackingConfig(workspaceRoot, config);
+    const folder = presetFolder
+        ? normalizeFolderPath(presetFolder)
+        : await vscode.window.showQuickPick(
+            (await listFolderCandidates(config)).map((candidate) => ({
+                label: candidate === '.' ? 'Workspace Root' : candidate,
+                description: candidate,
+            })),
+            {
+                placeHolder: 'Choose a folder DSAFlow is allowed to auto-log',
+                ignoreFocusOut: true,
+            },
+        ).then((selection) => selection?.description);
+
+    if (!folder) {
+        return;
+    }
+
+    tracking.trackedFolders.push(folder);
+    tracking.ignoredFolders = tracking.ignoredFolders.filter((item) => item !== folder);
+    await writeFolderTrackingConfig(workspaceRoot, config, tracking);
+    await refreshStudentSnapshot(context);
+    void vscode.window.showInformationMessage(`DSAFlow will auto-log files in "${folder}".`);
+}
+
+async function removeTrackedFolder(context: vscode.ExtensionContext): Promise<void> {
+    const config = getConfig();
+    const workspaceFolders = vscode.workspace.workspaceFolders || [];
+    if (!workspaceFolders.length) {
+        void vscode.window.showWarningMessage('Open a workspace folder before configuring DSAFlow tracked folders.');
+        return;
+    }
+
+    const workspaceRoot = workspaceFolders[0].uri.fsPath;
+    const tracking = readFolderTrackingConfig(workspaceRoot, config);
+    if (!tracking.trackedFolders.length) {
+        void vscode.window.showInformationMessage('DSAFlow has no tracked folders yet.');
+        return;
+    }
+
+    const selection = await vscode.window.showQuickPick(
+        tracking.trackedFolders.map((folder) => ({
+            label: folder === '.' ? 'Workspace Root' : folder,
+            description: folder,
+        })),
+        {
+            placeHolder: 'Choose a tracked folder to remove',
+            ignoreFocusOut: true,
+        },
+    );
+
+    if (!selection?.description) {
+        return;
+    }
+
+    tracking.trackedFolders = tracking.trackedFolders.filter((folder) => folder !== selection.description);
+    await writeFolderTrackingConfig(workspaceRoot, config, tracking);
+    await refreshStudentSnapshot(context);
+    void vscode.window.showInformationMessage(`DSAFlow removed "${selection.description}" from tracked folders.`);
+}
+
+async function openWorkspaceConfig(context: vscode.ExtensionContext): Promise<void> {
+    const config = getConfig();
+    const workspaceFolders = vscode.workspace.workspaceFolders || [];
+    if (!workspaceFolders.length) {
+        void vscode.window.showWarningMessage('Open a workspace folder before configuring DSAFlow tracked folders.');
+        return;
+    }
+
+    const workspaceRoot = workspaceFolders[0].uri.fsPath;
+    const configPath = getWorkspaceConfigPath(workspaceRoot, config);
+    if (!fs.existsSync(configPath)) {
+        await writeFolderTrackingConfig(workspaceRoot, config, readFolderTrackingConfig(workspaceRoot, config));
+    }
+
+    const document = await vscode.workspace.openTextDocument(vscode.Uri.file(configPath));
+    await vscode.window.showTextDocument(document, { preview: false });
+    await refreshStudentSnapshot(context);
+}
+
+async function manageTrackedFolders(context: vscode.ExtensionContext): Promise<void> {
+    const config = getConfig();
+    const workspaceFolders = vscode.workspace.workspaceFolders || [];
+    if (!workspaceFolders.length) {
+        void vscode.window.showWarningMessage('Open a workspace folder before configuring DSAFlow tracked folders.');
+        return;
+    }
+
+    const workspaceRoot = workspaceFolders[0].uri.fsPath;
+    const tracking = readFolderTrackingConfig(workspaceRoot, config);
+    const action = await vscode.window.showQuickPick([
+        {
+            label: 'Add Tracked Folder',
+            description: tracking.trackedFolders.length
+                ? `Current: ${tracking.trackedFolders.join(', ')}`
+                : 'No tracked folders yet',
+        },
+        {
+            label: 'Remove Tracked Folder',
+            description: tracking.trackedFolders.length
+                ? `Tracked: ${tracking.trackedFolders.length}`
+                : 'Nothing to remove',
+        },
+        {
+            label: 'Open Workspace Config',
+            description: config.workspaceConfigFile,
+        },
+    ], {
+        placeHolder: 'Manage where DSAFlow is allowed to auto-log',
+        ignoreFocusOut: true,
+    });
+
+    if (!action) {
+        return;
+    }
+
+    if (action.label === 'Add Tracked Folder') {
+        await addTrackedFolder(context);
+        return;
+    }
+
+    if (action.label === 'Remove Tracked Folder') {
+        await removeTrackedFolder(context);
+        return;
+    }
+
+    await openWorkspaceConfig(context);
+}
+
 async function maybeOfferWorkspaceImport(context: vscode.ExtensionContext): Promise<void> {
     const config = getConfig();
     if (!config.autoImportOnFirstRun || !vscode.workspace.workspaceFolders?.length) {
@@ -975,7 +1284,14 @@ async function maybeOfferWorkspaceImport(context: vscode.ExtensionContext): Prom
         return;
     }
 
-    const candidates = await findWorkspaceCandidateFiles(config.watchedGlob);
+    if (config.requireFolderApproval) {
+        const workspaceRoot = vscode.workspace.workspaceFolders?.[0]?.uri.fsPath;
+        if (!workspaceRoot || !readFolderTrackingConfig(workspaceRoot, config).trackedFolders.length) {
+            return;
+        }
+    }
+
+    const candidates = await findWorkspaceCandidateFiles(config);
     if (!candidates.length) {
         await context.globalState.update(key, true);
         return;
@@ -994,10 +1310,19 @@ async function maybeOfferWorkspaceImport(context: vscode.ExtensionContext): Prom
     }
 }
 
-async function findWorkspaceCandidateFiles(glob: string): Promise<vscode.Uri[]> {
+async function findWorkspaceCandidateFiles(config: ExtensionConfig): Promise<vscode.Uri[]> {
     const exclude = '**/{node_modules,.git,.next,dist,build,out,target}/**';
-    const files = await vscode.workspace.findFiles(glob, exclude, 250);
+    const files = await vscode.workspace.findFiles(config.watchedGlob, exclude, 250);
     return files.filter((uri) => {
+        const relativeFolder = getRelativeFolderForUri(uri);
+        const workspaceRoot = getWorkspaceRootForUri(uri);
+        if (config.requireFolderApproval && relativeFolder && workspaceRoot) {
+            const tracking = readFolderTrackingConfig(workspaceRoot, config);
+            if (!isFolderTracked(relativeFolder, tracking)) {
+                return false;
+            }
+        }
+
         const lower = uri.fsPath.toLowerCase();
         return KNOWN_TOPIC_TAGS.some((tag) => lower.includes(tag)) || /\d+[_-]/.test(path.basename(lower)) || lower.includes('leetcode') || lower.includes('codeforces');
     });
@@ -1016,7 +1341,16 @@ async function importWorkspaceHistory(
 
     const config = getConfig();
     try {
-        const candidates = options.candidates || await findWorkspaceCandidateFiles(config.watchedGlob);
+        if (config.requireFolderApproval) {
+            const workspaceRoot = vscode.workspace.workspaceFolders?.[0]?.uri.fsPath;
+            if (!workspaceRoot || !readFolderTrackingConfig(workspaceRoot, config).trackedFolders.length) {
+                void vscode.window.showInformationMessage('Choose at least one tracked folder before importing workspace history.');
+                await manageTrackedFolders(context);
+                return;
+            }
+        }
+
+        const candidates = options.candidates || await findWorkspaceCandidateFiles(config);
         if (!candidates.length) {
             void vscode.window.showInformationMessage('DSAFlow did not find any likely DSA files to import.');
             await context.globalState.update(getWorkspaceImportKey(), true);
@@ -1367,6 +1701,8 @@ function getConfig(): ExtensionConfig {
         apiUrl: config.get<string>('apiUrl', DEFAULT_API_URL),
         dashboardUrl: config.get<string>('dashboardUrl', DEFAULT_DASHBOARD_URL),
         watchedGlob: config.get<string>('watchedGlob', DEFAULT_GLOB),
+        requireFolderApproval: config.get<boolean>('requireFolderApproval', true),
+        workspaceConfigFile: config.get<string>('workspaceConfigFile', DEFAULT_WORKSPACE_CONFIG_FILE),
         autoLogOnCreate: config.get<boolean>('autoLogOnCreate', true),
         promptOnSave: config.get<boolean>('promptOnSave', false),
         promptForProblemUrl: config.get<boolean>('promptForProblemUrl', false),

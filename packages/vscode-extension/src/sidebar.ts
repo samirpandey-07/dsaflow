@@ -121,6 +121,14 @@ export class DSAFlowSidebarProvider implements vscode.TreeDataProvider<SidebarTr
                     icon: 'folder-opened',
                     command: { command: 'dsaflow.importWorkspace', title: 'Import Workspace History' },
                 }),
+                new SidebarTreeItem({
+                    kind: 'action',
+                    label: 'Manage Tracked Folders',
+                    description: 'Choose approved folders',
+                    tooltip: 'Select which folders DSAFlow is allowed to auto-log.',
+                    icon: 'folder-library',
+                    command: { command: 'dsaflow.manageTrackedFolders', title: 'Manage Tracked Folders' },
+                }),
             ];
         }
 
@@ -221,6 +229,14 @@ export class DSAFlowSidebarProvider implements vscode.TreeDataProvider<SidebarTr
                 tooltip: 'Log the currently active file into DSAFlow.',
                 icon: 'add',
                 command: { command: 'dsaflow.logCurrentFile', title: 'Log Current File' },
+            }),
+            new SidebarTreeItem({
+                kind: 'action',
+                label: 'Manage Tracked Folders',
+                description: 'Control auto-logging scope',
+                tooltip: 'Choose which folders DSAFlow can auto-log.',
+                icon: 'folder-library',
+                command: { command: 'dsaflow.manageTrackedFolders', title: 'Manage Tracked Folders' },
             }),
             new SidebarTreeItem({
                 kind: 'summary',

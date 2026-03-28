@@ -121,6 +121,21 @@
         "command": "dsaflow.showLearningCard",
         "title": "Show Learning Card",
         "category": "DSAFlow"
+      },
+      {
+        "command": "dsaflow.manageTrackedFolders",
+        "title": "Manage Tracked Folders",
+        "category": "DSAFlow"
+      },
+      {
+        "command": "dsaflow.addTrackedFolder",
+        "title": "Add Tracked Folder",
+        "category": "DSAFlow"
+      },
+      {
+        "command": "dsaflow.removeTrackedFolder",
+        "title": "Remove Tracked Folder",
+        "category": "DSAFlow"
       }
     ],
     "views": {
@@ -194,6 +209,16 @@
           "type": "string",
           "default": "**/*.{cpp,py,java,js,ts}",
           "description": "Glob pattern used by the extension watcher."
+        },
+        "dsaflow.requireFolderApproval": {
+          "type": "boolean",
+          "default": true,
+          "description": "Only auto-log files from folders explicitly approved by the user."
+        },
+        "dsaflow.workspaceConfigFile": {
+          "type": "string",
+          "default": ".dsaflow.json",
+          "description": "Workspace config file used to store tracked and ignored folders."
         },
         "dsaflow.autoLogOnCreate": {
           "type": "boolean",

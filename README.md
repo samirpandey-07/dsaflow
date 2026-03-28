@@ -145,8 +145,8 @@ dsaflow
 # 🔄 Data Flow
 
 1. **User creates solution file** in VS Code.
-2. **VS Code Extension detects file** and extracts title/topic.
-3. **Metadata extracted** via user prompt (Platform/Difficulty).
+2. **VS Code Extension checks folder approval**, then detects the file and extracts title/topic.
+3. **Metadata inferred** from file path, filename, and optional problem URL.
 4. **POST request to API** with secure token.
 5. **Supabase database stores record** and updates user stats.
 6. **Realtime event triggers dashboard update** via WebSockets.
@@ -220,11 +220,13 @@ Open `https://dsaflow-dashboard.vercel.app`
 
 # 🧩 VS Code Extension Usage
 
-1. Create a file with a structured name (e.g., `Arrays/two_sum.cpp`).
-2. Include the problem URL in a comment.
-3. The extension will automatically:
+1. Run `DSAFlow: Manage Tracked Folders` and approve the folders you want logged.
+2. Create a file with a structured name (e.g., `Arrays/two_sum.cpp`).
+3. Include the problem URL in a comment.
+4. The extension will automatically:
    - Detect file creation.
-   - Ask for platform and difficulty.
+   - Respect your approved folder list.
+   - Infer problem metadata from the file and optional URL.
    - Send problem metadata to the API.
    - Update your dashboard stats in real-time.
 
